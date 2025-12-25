@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "YARchive Downloader",
+  "version": "0.5",
+  "description": "Скачивание документов из архива Ярославской области",
+
+  "permissions": [
+    "downloads",
+    "activeTab",
+    "storage"
+  ],
+
+  "host_permissions": [
+    "https://af.yar-archives.ru/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "YARchive Downloader"
+  },
+
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://af.yar-archives.ru/archive27/unit/*",
+        "https://af.yar-archives.ru/archive*/*",
+        "https://af.yar-archives.ru/*"
+      ],
+      "js": [
+        "content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

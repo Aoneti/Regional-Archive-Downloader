@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>YARchive Downloader — Настройки</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fff;
+    --text: #222;
+    --panel: #f6f6f6;
+    --border: #ccc;
+  }
+
+  html.dark {
+    --bg: #111;
+    --text: #eee;
+    --panel: #1a1a1a;
+    --border: #333;
+  }
+
+  body {
+    font-family: "Lato", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    margin: 16px;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  h1 {
+    font-size: 18px;
+    margin: 0 0 8px 0;
+  }
+
+  .section {
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+  }
+
+  label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  input[type="number"] {
+    width: 120px;
+    padding: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  input[type="checkbox"] {
+    transform: scale(1.1);
+    margin-right: 6px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    background: var(--panel);
+    color: var(--text);
+  }
+
+  .btn.save {
+    background: #7FBE00;
+    border-color: #7FBE00;
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .btn.reset {
+    background: var(--bg);
+  }
+
+  .hint {
+    font-size: 12px;
+    color: #666;
+  }
+
+  html.dark .hint {
+    color: #aaa;
+  }
+
+  .theme-toggle {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+</style>
+
+</head>
+<body>
+  <h1>Настройки YARchive Downloader</h1>
+
+  <div class="section">
+    <label><input type="checkbox" id="createFolders"> Создавать автопапки</label>
+    <div class="hint">Если выключено — файлы будут сохраняться в корень загрузок с именами unit_ID_pNNN.jpg</div>
+  </div>
+
+  <div class="section">
+    <label>Поведение загрузки</label>
+    <div class="row">
+      <label style="flex:1">Задержка между загрузками (мс)</label>
+      <input type="number" id="delayMs" min="0" step="50">
+    </div>
+    <div class="row">
+      <label style="flex:1">Максимум страниц для поиска</label>
+      <input type="number" id="maxPages" min="1" step="1">
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="startFromCurrent"> Начинать с текущей страницы (если выключено — с 1)</label>
+    </div>
+  </div>
+
+  <div class="section">
+    <label>Тема интерфейса</label>
+    <div class="theme-toggle">
+      <label><input type="radio" name="theme" value="light" id="themeLight"> Светлая</label>
+      <label><input type="radio" name="theme" value="dark" id="themeDark"> Тёмная</label>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:8px; margin-top:12px;">
+    <button class="btn save" id="saveBtn">Сохранить</button>
+    <button class="btn reset" id="resetBtn">Сбросить по умолчанию</button>
+    <div id="msg" style="margin-left:8px;align-self:center;color:#333"></div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
