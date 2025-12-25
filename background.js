@@ -1,6 +1,3 @@
-// background.js
-
-// default icon mapping (active)
 const ICONS_ACTIVE = {
   "16": "icons/icon16.png",
   "32": "icons/icon32.png",
@@ -8,7 +5,6 @@ const ICONS_ACTIVE = {
   "128": "icons/icon128.png"
 };
 
-// inactive versions (you must provide these files)
 const ICONS_INACTIVE = {
   "16": "icons/icon16_inactive.png",
   "32": "icons/icon32_inactive.png",
@@ -16,7 +12,6 @@ const ICONS_INACTIVE = {
   "128": "icons/icon128_inactive.png"
 };
 
-// handle download requests from content-script
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || !msg.type) return;
 
@@ -33,7 +28,6 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     return;
   }
 
-  // set icon state
   if (msg.type === 'SET_ICON') {
     const state = msg.state === 'active' ? 'active' : 'inactive';
     const path = state === 'active' ? ICONS_ACTIVE : ICONS_INACTIVE;
@@ -44,9 +38,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     });
   }
 
-  // forward STATUS/PROGRESS/DONE to popup (if open)
   if (msg.type === 'STATUS' || msg.type === 'PROGRESS' || msg.type === 'DONE') {
     // broadcast to all extension contexts
     chrome.runtime.sendMessage(msg);
   }
+
 });
