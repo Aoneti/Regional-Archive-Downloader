@@ -1,7 +1,5 @@
-// content-script.js
 console.log('[Yar] content-script loaded (settings-aware)');
 
-// default settings
 const DEFAULTS = {
   createFolders: true,
   delayMs: 250,
@@ -27,8 +25,6 @@ async function ensureSettings() {
   }
   return settingsCache;
 }
-
-/* ---- existing logic but using settingsCache values ---- */
 
 const TEST_TIMEOUT = 6000;
 
@@ -230,7 +226,6 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'STOP') { if (isRunning) { isStopped = true; isPaused = false; sendStatus('Остановка…'); } }
 });
 
-// ensure initial settings load
 getSettings().then(cfg => {
   try {
     const unit = getUnitId();
