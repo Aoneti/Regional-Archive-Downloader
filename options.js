@@ -1,4 +1,3 @@
-// options.js
 const DEFAULTS = {
   createFolders: true,
   delayMs: 250,
@@ -57,3 +56,4 @@ document.addEventListener('DOMContentLoaded', () => {
   $('saveBtn').addEventListener('click', save);
   $('resetBtn').addEventListener('click', resetDefaults);
 });
+
