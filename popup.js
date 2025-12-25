@@ -1,4 +1,3 @@
-// popup.js
 console.log('[popup] loaded');
 
 const statusEl = document.getElementById('status');
@@ -33,7 +32,6 @@ function sendToActiveTab(message, cb) {
   });
 }
 
-// wired to buttons
 btnAll.addEventListener('click', () => {
   if (isRunning) return;
   isRunning = true;
@@ -81,12 +79,10 @@ btnStop.addEventListener('click', () => {
   btnPause.textContent = '⏸';
 });
 
-// open options
 openOptions.addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
 });
 
-// receive status/progress/done from background forwarded to all contexts
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || !msg.type) return;
   if (msg.type === 'STATUS') {
@@ -105,18 +101,16 @@ chrome.runtime.onMessage.addListener((msg) => {
     btnStop.disabled = true;
     btnPause.textContent = '⏸';
   } else if (msg.type === 'SET_THEME') {
-    // optional hook: apply classes if needed
     if (msg.theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }
 });
 
-// initialize state
 (function init() {
   btnPause.disabled = true;
   btnStop.disabled = true;
-  // request current theme from storage and apply (optional)
   chrome.storage.sync.get({ theme: 'light' }, items => {
     if (items.theme === 'dark') document.documentElement.classList.add('dark');
   });
 })();
+
