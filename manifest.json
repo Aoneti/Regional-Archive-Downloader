@@ -11,7 +11,8 @@
   ],
 
   "host_permissions": [
-    "https://af.yar-archives.ru/*"
+    "https://af.yar-archives.ru/*",
+    "https://gosarchive.gov35.ru/*"
   ],
 
   "content_security_policy": {
@@ -42,7 +43,9 @@
   "content_scripts": [
     {
       "matches": [
-        "https://af.yar-archives.ru/*"
+  "https://af.yar-archives.ru/*",
+  "https://gosarchive.gov35.ru/*"
+],
       ],
       "js": [
         "content-script.js"
