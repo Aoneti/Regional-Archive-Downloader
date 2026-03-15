@@ -112,7 +112,7 @@ function pad(num, w) {
 function detectCurrentPage() {
   for (const img of document.querySelectorAll('img')) {
     try {
-      if (img.src && img.src.includes('/archive27/image/')) {
+      if (img.src && img.src.includes('/image/')) {
         const m = img.src.match(/[?&]n=(\d+)/);
         if (m) return Number(m[1]);
       }
