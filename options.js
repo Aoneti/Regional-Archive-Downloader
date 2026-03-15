@@ -1,14 +1,3 @@
-/**
- * options.js — страница настроек YARchive Downloader
- *
- * Новое в этой версии:
- *  1. Слайдеры синхронизированы с числовыми полями (двусторонняя привязка).
- *  2. Чипы-пресеты: Быстро / Нормально / Медленно / Вежливо.
- *  3. Настройка параллельных загрузок (concurrentDownloads, 1–8).
- *  4. Тема — кнопочный переключатель вместо radio-инпутов.
- *  5. Валидация с зажимом в допустимый диапазон (no silent NaN).
- */
-
 const DEFAULTS = {
   createFolders:       true,
   delayMs:             250,
@@ -24,7 +13,6 @@ const LIMITS = {
   concurrentDownloads: { min: 1,    max: 8    }
 };
 
-/** Пресеты задержки с метками */
 const DELAY_PRESETS = [0, 250, 600, 1200];
 
 function $(id) { return document.getElementById(id); }
@@ -37,7 +25,6 @@ function applyTheme(theme) {
   $('themeLightBtn').setAttribute('aria-checked', String(theme === 'light'));
   $('themeDarkBtn').classList.toggle('active', theme === 'dark');
   $('themeDarkBtn').setAttribute('aria-checked', String(theme === 'dark'));
-  // Обновить скрытые radio (используются в save())
   $('themeLight').checked = (theme === 'light');
   $('themeDark').checked  = (theme === 'dark');
 }
@@ -47,15 +34,6 @@ $('themeDarkBtn').addEventListener('click',  () => applyTheme('dark'));
 
 // ── Двусторонняя привязка слайдер ↔ число ────────────────────────────────────
 
-/**
- * Связывает input[range] и input[number]: изменение одного обновляет другой
- * и отображаемое значение в label.
- *
- * @param {string} sliderId   — id range-инпута
- * @param {string} numberId   — id number-инпута
- * @param {string} displayId  — id span с отображаемым значением (может быть null)
- * @param {string} limitKey   — ключ в LIMITS
- */
 function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
   const slider  = $(sliderId);
   const number  = $(numberId);
@@ -69,7 +47,6 @@ function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
     slider.value  = v;
     number.value  = v;
     if (display) display.textContent = v;
-    // Подсветить активный пресет задержки
     if (numberId === 'delayMs') syncPresets(v);
   }
 
@@ -77,7 +54,6 @@ function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
   number.addEventListener('change', () => update(number.value));
   number.addEventListener('blur',   () => update(number.value));
 
-  // Начальная синхронизация
   update(number.value || DEFAULTS[limitKey]);
 }
 
@@ -87,7 +63,6 @@ bindSliderNumber('concurrentSlider', 'concurrentDownloads','concurrentVal', 'con
 
 // ── Пресеты задержки ──────────────────────────────────────────────────────────
 
-/** Выделяет чип пресета соответствующий текущему значению (если есть). */
 function syncPresets(value) {
   document.querySelectorAll('.preset[data-target="delayMs"]').forEach(btn => {
     btn.classList.toggle('active', Number(btn.dataset.value) === value);
@@ -101,7 +76,7 @@ document.querySelectorAll('.preset').forEach(btn => {
     const input  = $(target);
     if (!input) return;
     input.value = value;
-    input.dispatchEvent(new Event('change')); // триггерим двустороннюю привязку
+    input.dispatchEvent(new Event('change')); 
   });
 });
 
@@ -116,7 +91,6 @@ function load() {
     $('maxPages').value           = items.maxPages            ?? DEFAULTS.maxPages;
     $('concurrentDownloads').value = items.concurrentDownloads ?? DEFAULTS.concurrentDownloads;
 
-    // Триггернуть синхронизацию слайдеров и дисплея
     ['delayMs', 'maxPages', 'concurrentDownloads'].forEach(id => {
       $(id).dispatchEvent(new Event('change'));
     });
@@ -143,7 +117,6 @@ function save() {
     return;
   }
 
-  // Обновить поля если были зажаты
   $('delayMs').value             = delayMs;
   $('maxPages').value            = maxPages;
   $('concurrentDownloads').value = concurrentDownloads;
@@ -167,7 +140,6 @@ function save() {
     }
     showMsg('Сохранено');
     applyTheme(theme);
-    // Уведомить popup об изменении настроек (тема, maxPages)
     chrome.runtime.sendMessage(
       { type: 'SETTINGS_UPDATED', settings: toSave },
       () => void chrome.runtime.lastError
