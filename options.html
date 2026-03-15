@@ -18,12 +18,14 @@
       --radius-md:  9px;
     }
     html.dark {
-      --bg:         #131313;
-      --text:       #e8e8e8;
-      --muted:      #686868;
-      --panel:      #1e1e1e;
-      --border:     #2e2e2e;
-      --accent-dim: rgba(127,190,0,0.10);
+      --bg:           #131313;
+      --text:         #e8e8e8;
+      --muted:        #686868;
+      --panel:        #1e1e1e;
+      --border:       #2e2e2e;
+      --accent:       #F46A15;
+      --accent-hover: #E06115;
+      --accent-dim:   rgba(244,106,21,0.12);
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -264,7 +266,10 @@
       border: 1.5px solid currentColor;
       flex-shrink: 0;
     }
-    .theme-btn.active .dot { background: var(--accent); }
+    .theme-btn.active .dot {
+      background: var(--accent);
+      box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--accent);
+    }
 
     /* ── Кнопки сохранения ───────────────────────────────────────────────── */
     .actions {
@@ -289,9 +294,10 @@
       color: #fff;
       font-weight: 700;
     }
-    .btn-save:hover { background: #6aab00; border-color: #6aab00; }
+    .btn-save:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
     .btn-reset { background: var(--bg); color: var(--text); }
     .btn-reset:hover { background: var(--panel); }
+    html.dark .btn-reset { border-color: #555555; }
 
     /* ── Сообщение обратной связи ────────────────────────────────────────── */
     .msg {
@@ -319,7 +325,7 @@
       <div class="slider-wrap">
         <input type="range" id="delaySlider" min="0" max="3000" step="50" value="250"
                aria-label="Задержка в миллисекундах">
-        <input type="number" class="mini" id="delayMs" min="0" max="5000" step="50" value="250"
+        <input type="number" class="mini" id="delayMs" min="0" max="3000" step="50" value="250"
                aria-label="Задержка точное значение">
       </div>
       <div class="presets" role="group" aria-label="Пресеты задержки">
@@ -342,7 +348,7 @@
         <span class="field-value"><span id="maxPagesVal">1500</span></span>
       </div>
       <div class="slider-wrap">
-        <input type="range" id="maxPagesSlider" min="1" max="5000" step="50" value="1500"
+        <input type="range" id="maxPagesSlider" min="1" max="5000" step="1" value="1500"
                aria-label="Максимум страниц">
         <input type="number" class="mini" id="maxPages" min="1" max="5000" step="1" value="1500"
                aria-label="Максимум страниц точное значение">

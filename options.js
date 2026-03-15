@@ -8,7 +8,7 @@ const DEFAULTS = {
 };
 
 const LIMITS = {
-  delayMs:             { min: 0,    max: 5000 },
+  delayMs:             { min: 0,    max: 3000 },
   maxPages:            { min: 1,    max: 5000 },
   concurrentDownloads: { min: 1,    max: 8    }
 };
