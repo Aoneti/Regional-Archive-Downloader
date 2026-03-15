@@ -37,9 +37,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-// ── Состояние загрузки ───────────────────────────────────────────────────────
+ ── Состояние загрузки ───────────────────────────────────────────────────────
 
-const TEST_TIMEOUT = 6000;
+const TEST_TIMEOUT           = 6000;
+const RETRY_ATTEMPTS         = 2;     
+const RETRY_DELAY_MS         = 400;   
+const MAX_CONCURRENT_DOWNLOADS = 4;   
 
 let isPaused  = false;
 let isStopped = false;
@@ -55,7 +58,7 @@ async function waitIfPaused() {
   if (isStopped) throw new Error('stopped');
 }
 
-// ── Хелперы общения с background/popup ──────────────────────────────────────
+ ── Хелперы общения с background/popup ──────────────────────────────────────
 
 function sendStatus(text) {
   chrome.runtime.sendMessage({ type: 'STATUS', text });
@@ -74,7 +77,7 @@ function setIcon(state) {
   chrome.runtime.sendMessage({ type: 'SET_ICON', state });
 }
 
-// ── Утилиты DOM / URL ────────────────────────────────────────────────────────
+ ── Утилиты DOM / URL ────────────────────────────────────────────────────────
 
 function getUnitId() {
   const m = location.pathname.match(/\/unit\/(\d+)/);
@@ -98,7 +101,7 @@ function sanitizeForFilename(s) {
 }
 
 function imageUrl(unit, page) {
-  return `https://af.yar-archives.ru/archive27/image/${unit}?n=${page}`;
+  return `https:af.yar-archives.ru/archive27/image/${unit}?n=${page}`;
 }
 
 function pad(num, w) {
@@ -119,7 +122,7 @@ function detectCurrentPage() {
   return 1;
 }
 
-// ── Проверка существования страницы ─────────────────────────────────────────
+ ── Проверка существования страницы ─────────────────────────────────────────
 
 function testImage(url, timeout = TEST_TIMEOUT) {
   return new Promise(resolve => {
@@ -129,19 +132,48 @@ function testImage(url, timeout = TEST_TIMEOUT) {
     const finish = (result) => {
       if (!done) {
         done = true;
-        clearTimeout(t);
+        clearTimeout(timerId);
         img.onload  = null;
         img.onerror = null;
-        img.src = '';  
+        img.src = '';   
         resolve(result);
       }
     };
 
-    const t = setTimeout(() => finish(false), timeout);
+    const timerId = setTimeout(() => finish(false), timeout);
     img.onload  = () => finish(true);
     img.onerror = () => finish(false);
 
     img.src = url + '&_ts=' + Date.now();
+  });
+}
+
+async function testImageWithRetry(url, retries = RETRY_ATTEMPTS) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ok = await testImage(url);
+    if (ok) return true;
+    if (attempt < retries) {
+      await sleep(RETRY_DELAY_MS * (attempt + 1)); // 400 мс, 800 мс, …
+    }
+  }
+  return false;
+}
+
+// ── Семафор загрузок ─────────────────────────────────────────────────────────
+
+let downloadsInFlight = 0;
+
+async function downloadWithSemaphore(url, filename) {
+  while (downloadsInFlight >= MAX_CONCURRENT_DOWNLOADS) {
+    await sleep(200);
+    await waitIfPaused(); 
+  }
+
+  downloadsInFlight++;
+
+  chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename }, () => {
+    void chrome.runtime.lastError; 
+    downloadsInFlight--;
   });
 }
 
@@ -150,22 +182,22 @@ function testImage(url, timeout = TEST_TIMEOUT) {
 async function findTotalPages(unit, start, maxPages, progressCb) {
   await waitIfPaused();
 
-  progressCb && progressCb(`Проверка страницы ${start}…`);
-  const startExists = await testImage(imageUrl(unit, start));
+  progressCb?.(`Проверка страницы ${start}…`);
+  const startExists = await testImageWithRetry(imageUrl(unit, start));
   if (!startExists) return 0;
 
   let lo       = start; 
-  let failedAt = null;  
+  let failedAt = null; 
 
   let probe = start;
   while (probe <= maxPages) {
     await waitIfPaused();
     const next = Math.min(probe * 2, maxPages);
-    progressCb && progressCb(`Проверка страницы ${next}…`);
-    const ok = await testImage(imageUrl(unit, next));
+    progressCb?.(`Проверка страницы ${next}…`);
+    const ok = await testImageWithRetry(imageUrl(unit, next));
     if (ok) {
       lo = next;
-      if (next === maxPages) return maxPages; 
+      if (next === maxPages) return maxPages;
       probe = next;
     } else {
       failedAt = next;
@@ -180,8 +212,8 @@ async function findTotalPages(unit, start, maxPages, progressCb) {
   while (lo < hi - 1) {
     await waitIfPaused();
     const mid = Math.floor((lo + hi) / 2);
-    progressCb && progressCb(`Уточнение: страница ${mid}…`);
-    const ok = await testImage(imageUrl(unit, mid));
+    progressCb?.(`Уточнение: страница ${mid}…`);
+    const ok = await testImageWithRetry(imageUrl(unit, mid));
     if (ok) lo = mid; else hi = mid;
   }
 
@@ -234,7 +266,7 @@ async function downloadAll() {
         ? `${folderName}/${pad(p, padWidth)}.jpg`
         : `unit_${unit}_p${pad(p, padWidth)}.jpg`;
 
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(unit, p), filename });
+      await downloadWithSemaphore(imageUrl(unit, p), filename);
 
       await sleep(cfg.delayMs);
     }
@@ -252,6 +284,7 @@ async function downloadAll() {
     isRunning = false;
     isPaused  = false;
     isStopped = false;
+    downloadsInFlight = 0;
     setIcon('inactive');
   }
 }
@@ -313,9 +346,9 @@ chrome.runtime.onMessage.addListener((msg) => {
         sendStatus('Остановка…');
       }
       break;
-      
+
     case 'GET_STATE':
-      return true; 
+      return true;
   }
 });
 
