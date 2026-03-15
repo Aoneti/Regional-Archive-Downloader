@@ -2,178 +2,509 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>Yar Downloader</title>
-
-    <style>
+  <title>YARchive Downloader</title>
+  <style>
+    /* ── Переменные ───────────────────────────────────────────────────────── */
     :root {
-      --bg:     #ffffff;
-      --text:   #222222;
-      --panel:  #f5f5f5;
-      --border: #dddddd;
-      --accent: #7FBE00;
-      --danger: #d9534f;
+      --bg:           #ffffff;
+      --text:         #1a1a1a;
+      --text-muted:   #888888;
+      --panel:        #f4f4f4;
+      --border:       #e2e2e2;
+      --accent:       #7FBE00;
+      --accent-hover: #6aab00;
+      --accent-dim:   rgba(127,190,0,0.15);
+      --danger:       #e05252;
+      --danger-hover: #c93c3c;
+      --warn-bg:      #fffbeb;
+      --warn-border:  #f8d861;
+      --warn-text:    #7a5c00;
+      --success-bg:   #f0faf0;
+      --success-border: #7FBE00;
+      --radius-sm:    6px;
+      --radius-md:    9px;
     }
-
     html.dark {
-      --bg:     #111111;
-      --text:   #eeeeee;
-      --panel:  #1a1a1a;
-      --border: #333333;
+      --bg:           #131313;
+      --text:         #e8e8e8;
+      --text-muted:   #686868;
+      --panel:        #1e1e1e;
+      --border:       #2e2e2e;
+      --accent-dim:   rgba(127,190,0,0.12);
+      --warn-bg:      #1f1a06;
+      --warn-border:  #7a6200;
+      --warn-text:    #f8d06a;
+      --success-bg:   #0d1f0d;
+      --success-border: #3a6d11;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
 
     body {
-      width: 260px;
+      width: 284px;
       margin: 0;
-      padding: 12px;
+      padding: 0;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 13px;
       background: var(--bg);
       color: var(--text);
+      -webkit-font-smoothing: antialiased;
     }
 
-    h1 {
-      font-size: 15px;
+    /* ── Шапка ───────────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 14px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-title {
+      font-size: 13px;
       font-weight: 700;
-      margin: 0 0 10px;
+      letter-spacing: -0.2px;
+    }
+    .header-gear {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 15px;
+      padding: 3px 5px;
+      border-radius: var(--radius-sm);
+      line-height: 1;
+      transition: background 0.12s, color 0.12s;
+    }
+    .header-gear:hover { color: var(--text); background: var(--panel); }
+
+    /* ── Баннер «не та страница» ─────────────────────────────────────────── */
+    .banner {
+      display: none;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .banner.warn {
+      background: var(--warn-bg);
+      border-color: var(--warn-border);
+      display: flex;
+    }
+    .banner-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .banner-text { font-size: 12px; color: var(--warn-text); line-height: 1.5; }
+    .banner-text a { color: var(--warn-text); font-weight: 600; }
+
+    /* ── Секция диапазона ────────────────────────────────────────────────── */
+    .range-section {
+      padding: 10px 14px 6px;
+    }
+    .range-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 9px;
+    }
+    .range-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .range-value {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
     }
 
-    /* ── Карточка ───────────────────────────────── */
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px;
-      margin-bottom: 10px;
+    /* Dual-thumb трек */
+    .range-wrap {
+      position: relative;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      padding: 0 7px;
+      margin-bottom: 3px;
+      touch-action: none;
     }
+    .range-track {
+      position: relative;
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+    }
+    .range-fill {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      pointer-events: none;
+      transition: left 0.05s, width 0.05s;
+    }
+    .range-thumb {
+      position: absolute;
+      top: 50%;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2.5px solid var(--bg);
+      box-shadow: 0 0 0 1.5px var(--accent);
+      transform: translate(-50%, -50%);
+      cursor: grab;
+      z-index: 3;
+      touch-action: none;
+      transition: transform 0.1s, box-shadow 0.1s, left 0.05s;
+    }
+    .range-thumb:hover {
+      transform: translate(-50%, -50%) scale(1.18);
+      box-shadow: 0 0 0 4px var(--accent-dim);
+    }
+    .range-thumb:active { cursor: grabbing; }
+    .range-thumb.dragging {
+      transform: translate(-50%, -50%) scale(1.28);
+      box-shadow: 0 0 0 6px var(--accent-dim);
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .range-thumb:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent);
+    }
+    .range-thumb.disabled { cursor: not-allowed; opacity: 0.4; pointer-events: none; }
 
-    /* ── Кнопки ─────────────────────────────────── */
+    .range-hints {
+      display: flex;
+      justify-content: space-between;
+      padding: 0 7px;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .range-hints strong { color: var(--text); font-weight: 600; }
+
+    /* ── Разделитель ─────────────────────────────────────────────────────── */
+    .sep { height: 1px; background: var(--border); }
+
+    /* ── Кнопки действий ─────────────────────────────────────────────────── */
+    .actions { padding: 10px 14px 8px; }
+
     .btn {
-      display: inline-flex;
+      display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 7px;
       width: 100%;
-      padding: 8px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: var(--panel);
-      color: var(--text);
+      padding: 9px 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
       cursor: pointer;
       font-size: 13px;
       font-family: inherit;
+      font-weight: 600;
+      line-height: 1;
+      transition: background 0.13s, border-color 0.13s, opacity 0.13s;
     }
-
-    .btn.primary {
+    .btn-primary {
       background: var(--accent);
       border-color: var(--accent);
       color: #fff;
-      font-weight: 600;
     }
-
-    /* Отступ между идущими подряд .btn */
-    .btn + .btn {
-      margin-top: 8px;
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
     }
+    .btn-secondary {
+      background: var(--panel);
+      border-color: var(--border);
+      color: var(--text);
+      font-weight: 500;
+      margin-top: 6px;
+    }
+    .btn-secondary:hover:not(:disabled) { background: var(--border); }
+    .btn:disabled { opacity: 0.42; cursor: not-allowed; }
 
-    /* ── Строка иконок-кнопок (Пауза / Стоп) ───── */
-    .icon-row {
-      display: flex;
+    /* ── Управление (Пауза / Стоп) ───────────────────────────────────────── */
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 6px;
-      margin-top: 8px;
+      padding: 0 14px 10px;
     }
-
-    .icon-btn {
-      flex: 1 1 0;
-      display: inline-flex;
+    .btn-ctrl {
+      display: flex;
       align-items: center;
       justify-content: center;
-      padding: 8px 0;
-      border-radius: 8px;
+      gap: 5px;
+      padding: 7px 8px;
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       background: var(--panel);
       color: var(--text);
       cursor: pointer;
-      font-size: 14px;
+      font-size: 12px;
       font-family: inherit;
+      font-weight: 500;
+      transition: background 0.12s, opacity 0.12s;
     }
-
-    .icon-btn.danger {
+    .btn-ctrl:hover:not(:disabled) { background: var(--border); }
+    .btn-ctrl.danger {
       background: var(--danger);
-      color: #fff;
       border-color: var(--danger);
+      color: #fff;
     }
-
-    .icon-btn:disabled,
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: default;
+    .btn-ctrl.danger:hover:not(:disabled) {
+      background: var(--danger-hover);
+      border-color: var(--danger-hover);
     }
+    .btn-ctrl:disabled { opacity: 0.38; cursor: not-allowed; }
 
-    /* ── Прогресс-бар ───────────────────────────── */
-    .progress-wrap {
-      margin-top: 8px;
-      height: 8px;
+    /* ── Прогресс ────────────────────────────────────────────────────────── */
+    .progress-section { padding: 0 14px 10px; }
+
+    .progress-track {
+      height: 5px;
       background: var(--border);
-      border-radius: 4px;
+      border-radius: 3px;
       overflow: hidden;
+      margin-bottom: 7px;
     }
-
     .progress-bar {
       height: 100%;
       width: 0%;
       background: var(--accent);
-      transition: width 0.2s ease;
+      border-radius: 3px;
+      transition: width 0.35s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .progress-bar.active::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+      animation: shimmer 1.4s linear infinite;
+    }
+    @keyframes shimmer {
+      from { transform: translateX(-100%); }
+      to   { transform: translateX(210%); }
     }
 
-    /* ── Статус ─────────────────────────────────── */
-    .status {
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .progress-status {
+      font-size: 11px;
+      color: var(--text);
+      line-height: 1.45;
+      flex: 1;
+    }
+    .progress-pct {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-left: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .progress-eta {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* ── Итоговая карточка (появляется после DONE) ───────────────────────── */
+    .summary-card {
+      display: none;
+      margin: 0 14px 10px;
+      padding: 10px 12px;
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      border-radius: var(--radius-md);
       font-size: 12px;
-      margin-top: 8px;
-      min-height: 20px;
-      opacity: 0.95;
-      word-break: break-word;
     }
+    .summary-card.visible { display: block; }
+    .summary-title {
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 8px;
+    }
+    .summary-item { color: var(--text-muted); font-size: 11px; }
+    .summary-item strong { color: var(--text); font-weight: 600; }
 
-    /* ── Подвал ─────────────────────────────────── */
+    /* ── Toast-уведомление ───────────────────────────────────────────────── */
+    .toast {
+      position: absolute;
+      bottom: 42px;
+      left: 14px;
+      right: 14px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      background: #222;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 500;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      z-index: 10;
+    }
+    html.dark .toast { background: #eee; color: #111; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Подвал ─────────────────────────────────────────────────────────── */
     .footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 11px;
-      opacity: 0.7;
-      margin-top: 8px;
+      padding: 6px 14px 8px;
+      border-top: 1px solid var(--border);
     }
+    .footer-brand {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .footer-keys {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .kbd {
+      display: inline-block;
+      font-size: 9px;
+      padding: 1px 4px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--panel);
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .footer-key-hint { font-size: 9px; color: var(--text-muted); }
 
-    .link {
-      cursor: pointer;
-      text-decoration: underline;
+    /* ── Spinner ─────────────────────────────────────────────────────────── */
+    .spinner {
+      width: 11px;
+      height: 11px;
+      border: 2px solid rgba(255,255,255,0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      flex-shrink: 0;
+      display: none;
     }
+    .btn-primary.searching .spinner { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
-
 <body>
-  <h1>YARchive Downloader</h1>
 
-  <div class="panel">
-    <button id="btnAll"     class="btn primary">Скачать весь документ</button>
-    <button id="btnCurrent" class="btn">Скачать текущую страницу</button>
-
-    <div class="icon-row">
-      <button id="btnPause" class="icon-btn" title="Пауза / Продолжить">⏸</button>
-      <button id="btnStop"  class="icon-btn danger" title="Остановить">⏹</button>
-    </div>
-
-    <div class="progress-wrap">
-      <div id="progressBar" class="progress-bar"></div>
-    </div>
-
-    <div id="status" class="status">Прогресс</div>
+  <!-- Шапка -->
+  <div class="header">
+    <span class="header-title">YARchive Downloader</span>
+    <button class="header-gear" id="openOptions" title="Настройки (Alt+S)" aria-label="Открыть настройки">⚙</button>
   </div>
 
+  <!-- Баннер: не на странице архива -->
+  <div class="banner" id="bannerNotArchive" role="alert">
+    <span class="banner-icon">⚠</span>
+    <span class="banner-text">
+      Откройте страницу документа на
+      <a href="https://af.yar-archives.ru" target="_blank">af.yar-archives.ru</a>
+    </span>
+  </div>
+
+  <!-- Слайдер диапазона страниц -->
+  <div class="range-section">
+    <div class="range-row">
+      <span class="range-label">Диапазон страниц</span>
+      <span class="range-value" id="rangeDisplay" aria-live="polite">1 — до конца</span>
+    </div>
+
+    <div class="range-wrap" id="rangeWrap" aria-label="Выбор диапазона страниц">
+      <div class="range-track" id="rangeTrack">
+        <div class="range-fill" id="rangeFill"></div>
+        <div class="range-thumb" id="thumbStart"
+             role="slider" tabindex="0"
+             aria-label="Начальная страница"
+             aria-valuemin="1" aria-valuemax="5000" aria-valuenow="1"></div>
+        <div class="range-thumb" id="thumbEnd"
+             role="slider" tabindex="0"
+             aria-label="Конечная страница"
+             aria-valuemin="1" aria-valuemax="5000" aria-valuenow="5000"></div>
+      </div>
+    </div>
+
+    <div class="range-hints">
+      <span>стр. <strong id="hintFrom">1</strong></span>
+      <span id="hintToWrap">до <strong id="hintTo">конца</strong></span>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- Кнопки -->
+  <div class="actions">
+    <button id="btnAll" class="btn btn-primary">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="btnAllText">Скачать документ</span>
+    </button>
+    <button id="btnCurrent" class="btn btn-secondary">
+      Скачать текущую страницу
+    </button>
+  </div>
+
+  <!-- Пауза / Стоп -->
+  <div class="controls">
+    <button id="btnPause" class="btn-ctrl" title="Пауза / Продолжить (Пробел)" disabled aria-label="Пауза">
+      <span id="pauseIcon" aria-hidden="true">⏸</span>
+      <span id="pauseLabel">Пауза</span>
+    </button>
+    <button id="btnStop" class="btn-ctrl danger" title="Остановить (Escape)" disabled aria-label="Остановить">
+      ⏹ Стоп
+    </button>
+  </div>
+
+  <!-- Прогресс -->
+  <div class="progress-section" role="status" aria-live="polite">
+    <div class="progress-track"
+         role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+         id="progressRole">
+      <div id="progressBar" class="progress-bar"></div>
+    </div>
+    <div class="progress-meta">
+      <span id="status" class="progress-status">Готов к работе</span>
+      <span id="progressPct" class="progress-pct"></span>
+    </div>
+    <div id="progressEta" class="progress-eta"></div>
+  </div>
+
+  <!-- Итоговая карточка -->
+  <div class="summary-card" id="summaryCard" role="region" aria-label="Результат загрузки">
+    <div class="summary-title" id="summaryTitle">Загрузка завершена</div>
+    <div class="summary-grid" id="summaryGrid"></div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" role="status" aria-live="assertive"></div>
+
+  <!-- Подвал -->
   <div class="footer">
-    <span>ГАЯО</span>
-    <span id="openOptions" class="link">⚙ Настройки</span>
+    <span class="footer-brand">ГАЯО</span>
+    <div class="footer-keys">
+      <kbd class="kbd">Пробел</kbd><span class="footer-key-hint">пауза</span>
+      <kbd class="kbd">Esc</kbd><span class="footer-key-hint">стоп</span>
+    </div>
   </div>
 
   <script src="popup.js"></script>
