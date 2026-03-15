@@ -102,7 +102,7 @@ function sanitizeForFilename(s) {
 }
 
 function imageUrl(unit, page) {
-  return `https:af.yar-archives.ru/archive27/image/${unit}?n=${page}`;
+  return `https://af.yar-archives.ru/archive27/image/${unit}?n=${page}`;
 }
 
 function pad(num, w) {
