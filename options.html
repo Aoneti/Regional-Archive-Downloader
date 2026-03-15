@@ -3,141 +3,229 @@
 <head>
   <meta charset="utf-8">
   <title>YARchive Downloader — Настройки</title>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #fff;
-    --text: #222;
-    --panel: #f6f6f6;
-    --border: #ccc;
-  }
 
-  html.dark {
-    --bg: #111;
-    --text: #eee;
-    --panel: #1a1a1a;
-    --border: #333;
-  }
+  <style>
+    :root {
+      --bg:     #fff;
+      --text:   #222;
+      --panel:  #f6f6f6;
+      --border: #ccc;
+      --accent: #7FBE00;
+      --danger: #c0392b;
+    }
 
-  body {
-    font-family: "Lato", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-    margin: 16px;
-    background: var(--bg);
-    color: var(--text);
-  }
+    html.dark {
+      --bg:     #111;
+      --text:   #eee;
+      --panel:  #1a1a1a;
+      --border: #333;
+    }
 
-  h1 {
-    font-size: 18px;
-    margin: 0 0 8px 0;
-  }
+    *, *::before, *::after { box-sizing: border-box; }
 
-  .section {
-    margin: 12px 0;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-  }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 16px;
+      max-width: 520px;
+      background: var(--bg);
+      color: var(--text);
+    }
 
-  label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
-  }
+    h1 {
+      font-size: 18px;
+      margin: 0 0 8px;
+    }
 
-  .row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 8px;
-  }
+    /* ── Секция ──────────────────────────────────── */
+    .section {
+      margin: 12px 0;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+    }
 
-  input[type="number"] {
-    width: 120px;
-    padding: 6px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--text);
-  }
+    .section-title {
+      display: block;
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
 
-  input[type="checkbox"] {
-    transform: scale(1.1);
-    margin-right: 6px;
-  }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
 
-  .btn {
-    padding: 8px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    background: var(--panel);
-    color: var(--text);
-  }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
 
-  .btn.save {
-    background: #7FBE00;
-    border-color: #7FBE00;
-    color: #fff;
-    font-weight: 600;
-  }
+    .row label {
+      flex: 1;
+      margin-bottom: 0;
+    }
 
-  .btn.reset {
-    background: var(--bg);
-  }
+    /* ── Числовые поля ───────────────────────────── */
+    input[type="number"] {
+      width: 120px;
+      padding: 6px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+    }
 
-  .hint {
-    font-size: 12px;
-    color: #666;
-  }
+    input[type="checkbox"] {
+      transform: scale(1.1);
+      margin-right: 6px;
+      cursor: pointer;
+    }
 
-  html.dark .hint {
-    color: #aaa;
-  }
+    /* ── Тема ────────────────────────────────────── */
+    .theme-toggle {
+      display: flex;
+      gap: 16px;
+    }
 
-  .theme-toggle {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-</style>
+    .theme-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      margin-bottom: 0;
+    }
 
+    /* ── Кнопки ─────────────────────────────────── */
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      background: var(--panel);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    .btn.save {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .btn.reset {
+      background: var(--bg);
+    }
+
+    /* ── Строка кнопок ───────────────────────────── */
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 14px;
+    }
+
+    /* ── Сообщения обратной связи ────────────────── */
+    .msg {
+      font-size: 12px;
+      margin-left: 4px;
+      align-self: center;
+    }
+
+    .msg--ok    { color: var(--accent); }
+    .msg--error { color: var(--danger); font-weight: 600; }
+
+    /* ── Подсказки ───────────────────────────────── */
+    .hint {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    html.dark .hint { color: #aaa; }
+  </style>
 </head>
 <body>
   <h1>Настройки YARchive Downloader</h1>
 
+  <!-- Секция: папки -->
   <div class="section">
-    <label><input type="checkbox" id="createFolders"> Создавать автопапки</label>
-    <div class="hint">Если выключено — файлы будут сохраняться в корень загрузок с именами unit_ID_pNNN.jpg</div>
-  </div>
-
-  <div class="section">
-    <label>Поведение загрузки</label>
-    <div class="row">
-      <label style="flex:1">Задержка между загрузками (мс)</label>
-      <input type="number" id="delayMs" min="0" step="50">
-    </div>
-    <div class="row">
-      <label style="flex:1">Максимум страниц для поиска</label>
-      <input type="number" id="maxPages" min="1" step="1">
-    </div>
-    <div class="row">
-      <label><input type="checkbox" id="startFromCurrent"> Начинать с текущей страницы (если выключено — с 1)</label>
+    <span class="section-title">Сохранение файлов</span>
+    <label>
+      <input type="checkbox" id="createFolders">
+      Создавать автопапки
+    </label>
+    <div class="hint">
+      Если выключено — файлы сохраняются в корень загрузок с именами
+      <code>unit_ID_pNNN.jpg</code>
     </div>
   </div>
 
+  <!-- Секция: параметры загрузки -->
   <div class="section">
-    <label>Тема интерфейса</label>
+    <span class="section-title">Параметры загрузки</span>
+
+    <div class="row">
+      <label for="delayMs">Задержка между загрузками (мс)</label>
+      <input
+        type="number"
+        id="delayMs"
+        min="0"
+        max="5000"
+        step="50"
+      >
+    </div>
+    <div class="hint" style="margin-bottom: 10px;">Диапазон: 0–5000 мс</div>
+
+    <div class="row">
+      <label for="maxPages">Максимум страниц для поиска</label>
+      <input
+        type="number"
+        id="maxPages"
+        min="1"
+        max="5000"
+        step="1"
+      >
+    </div>
+    <div class="hint" style="margin-bottom: 10px;">Диапазон: 1–5000 стр.</div>
+
+    <div class="row">
+      <label for="startFromCurrent">
+        <input type="checkbox" id="startFromCurrent">
+        Начинать с текущей страницы
+      </label>
+    </div>
+    <div class="hint">Если выключено — поиск начнётся со страницы 1</div>
+  </div>
+
+  <!-- Секция: тема -->
+  <div class="section">
+    <span class="section-title">Тема интерфейса</span>
     <div class="theme-toggle">
-      <label><input type="radio" name="theme" value="light" id="themeLight"> Светлая</label>
-      <label><input type="radio" name="theme" value="dark" id="themeDark"> Тёмная</label>
+      <label>
+        <input type="radio" name="theme" value="light" id="themeLight">
+        Светлая
+      </label>
+      <label>
+        <input type="radio" name="theme" value="dark" id="themeDark">
+        Тёмная
+      </label>
     </div>
   </div>
 
-  <div style="display:flex; gap:8px; margin-top:12px;">
-    <button class="btn save" id="saveBtn">Сохранить</button>
+  <!-- Кнопки -->
+  <div class="actions">
+    <button class="btn save"  id="saveBtn">Сохранить</button>
     <button class="btn reset" id="resetBtn">Сбросить по умолчанию</button>
-    <div id="msg" style="margin-left:8px;align-self:center;color:#333"></div>
+    <span id="msg" class="msg"></span>
   </div>
 
   <script src="options.js"></script>
