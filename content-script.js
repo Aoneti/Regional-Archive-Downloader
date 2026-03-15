@@ -1,20 +1,3 @@
-/**
- * content-script.js — основная логика скачивания (YARchive Downloader)
- *
- * Исправления:
- *  1. settingsCache инициализируется как null — ensureSettings() теперь
- *     корректно загружает настройки при первом обращении.
- *  2. chrome.storage.onChanged инвалидирует кэш при изменении настроек
- *     (например, пользователь сохранил новые значения в options.html).
- *  3. findTotalPages() заменён на бинарный поиск — O(log n) вместо O(n).
- *     Для документа 500 страниц: было ~125 сек., стало ~5 сек.
- *  4. testImage() явно очищает img.src после использования — нет утечек памяти.
- *  5. Пустой catch в detectCurrentPage() заменён логирующим.
- *  6. Добавлен обработчик GET_STATE — popup восстанавливает UI при переоткрытии.
- *  7. console.log заменён на log() — в релизе логи выключены (DEBUG = false).
- *  8. Все строки-пути через imageUrl() — нет разбросанных шаблонов.
- */
-
 const DEBUG = false;
 const log   = (...args) => DEBUG && console.log('[YARchive]', ...args);
 
@@ -48,7 +31,6 @@ async function ensureSettings() {
   return settingsCache;
 }
 
-// Инвалидация кэша при изменении настроек из options.html
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync') {
     settingsCache = null;
@@ -59,9 +41,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // ── Состояние загрузки ───────────────────────────────────────────────────────
 
 const TEST_TIMEOUT           = 6000;
-const RETRY_ATTEMPTS         = 2;     // попыток после первого провала
-const RETRY_DELAY_MS         = 400;   // базовая задержка между ретраями (умножается на номер попытки)
-const MAX_CONCURRENT_DOWNLOADS = 4;   // максимум параллельных загрузок в chrome.downloads
+const RETRY_ATTEMPTS         = 2;
+const RETRY_DELAY_MS         = 400;
+const MAX_CONCURRENT_DOWNLOADS = 4;
 
 let isPaused  = false;
 let isStopped = false;
@@ -120,7 +102,7 @@ function sanitizeForFilename(s) {
 }
 
 function imageUrl(unit, page) {
-  return `https://af.yar-archives.ru/archive27/image/${unit}?n=${page}`;
+  return `https:af.yar-archives.ru/archive27/image/${unit}?n=${page}`;
 }
 
 function pad(num, w) {
@@ -141,13 +123,8 @@ function detectCurrentPage() {
   return 1;
 }
 
-// ── Проверка существования страницы ─────────────────────────────────────────
+ ── Проверка существования страницы ─────────────────────────────────────────
 
-/**
- * Проверяет, существует ли изображение по URL.
- * Явно обнуляет img.src после использования во избежание утечек памяти
- * при большом количестве последовательных проверок.
- */
 function testImage(url, timeout = TEST_TIMEOUT) {
   return new Promise(resolve => {
     const img = new Image();
@@ -159,7 +136,7 @@ function testImage(url, timeout = TEST_TIMEOUT) {
         clearTimeout(timerId);
         img.onload  = null;
         img.onerror = null;
-        img.src = '';   // явная очистка — предотвращает утечку памяти
+        img.src = '';  
         resolve(result);
       }
     };
@@ -168,33 +145,16 @@ function testImage(url, timeout = TEST_TIMEOUT) {
     img.onload  = () => finish(true);
     img.onerror = () => finish(false);
 
-    // cache-busting чтобы не получить закешированный 404
     img.src = url + '&_ts=' + Date.now();
   });
 }
 
-/**
- * Обёртка над testImage с повторными попытками.
- *
- * Зачем: однократный сетевой сбой (таймаут, обрыв) без retry приводит к тому,
- * что бинарный поиск считает страницу несуществующей и возвращает заниженное
- * число страниц — документ «обрезается» посередине без каких-либо признаков
- * ошибки для пользователя.
- *
- * Стратегия: линейно нарастающая задержка (400 мс, 800 мс, …) — достаточно
- * агрессивна чтобы пережить флуктуацию, но не настолько чтобы заметно замедлить
- * поиск на реально несуществующих страницах.
- *
- * @param {string} url
- * @param {number} [retries=RETRY_ATTEMPTS]
- * @returns {Promise<boolean>}
- */
 async function testImageWithRetry(url, retries = RETRY_ATTEMPTS) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ok = await testImage(url);
     if (ok) return true;
     if (attempt < retries) {
-      await sleep(RETRY_DELAY_MS * (attempt + 1)); // 400 мс, 800 мс, …
+      await sleep(RETRY_DELAY_MS * (attempt + 1));
     }
   }
   return false;
@@ -202,19 +162,8 @@ async function testImageWithRetry(url, retries = RETRY_ATTEMPTS) {
 
 // ── Семафор загрузок ─────────────────────────────────────────────────────────
 
-/**
- * Количество DOWNLOAD-запросов, отданных в background и ещё не подтверждённых.
- * Ограничивает параллелизм: при 1500 страницах без семафора все 1500 запросов
- * попадают в очередь chrome.downloads одновременно, что может подвесить браузер.
- */
 let downloadsInFlight = 0;
 
-/**
- * Отправляет DOWNLOAD-сообщение в background, соблюдая лимит параллелизма.
- * @param {string} url
- * @param {string} filename
- * @param {number} [limit=MAX_CONCURRENT_DOWNLOADS]
- */
 async function downloadWithSemaphore(url, filename, limit = MAX_CONCURRENT_DOWNLOADS) {
   while (downloadsInFlight >= limit) {
     await sleep(200);
@@ -231,33 +180,13 @@ async function downloadWithSemaphore(url, filename, limit = MAX_CONCURRENT_DOWNL
 
 // ── Бинарный поиск числа страниц ────────────────────────────────────────────
 
-/**
- * Находит последнюю существующую страницу за O(log n) запросов.
- *
- * Алгоритм:
- *   1. Экспоненциально удваиваем probe пока страница существует — находим
- *      верхнюю границу диапазона (первая несуществующая страница = failedAt).
- *   2. Бинарный поиск в диапазоне [lo … failedAt] — lo это последняя
- *      подтверждённая страница, failedAt — первая несуществующая.
- *
- * Критично: lo и hi должны быть "последний успех" и "первый провал"
- * соответственно, а не lo = lastSuccess/2. Иначе страницы между
- * lastSuccess и failedAt будут пропущены.
- *
- * Пример: 73 страницы
- *   Экспонента: 1✓ 2✓ 4✓ 8✓ 16✓ 32✓ 64✓ 128✗ → lo=64, failedAt=128
- *   Бинарный: 96✗→hi=96, 80✗→hi=80, 72✓→lo=72, 76✗→hi=76,
- *             74✗→hi=74, 73✓→lo=73 → return 73 ✓
- */
 async function findTotalPages(unit, start, maxPages, progressCb) {
   await waitIfPaused();
 
-  // Шаг 0: убедиться что стартовая страница существует
   progressCb?.(`Проверка страницы ${start}…`);
   const startExists = await testImageWithRetry(imageUrl(unit, start));
   if (!startExists) return 0;
 
-  // Шаг 1: экспоненциальный рост — найти первую несуществующую страницу
   let lo       = start; // последняя подтверждённая страница
   let failedAt = null;  // первая несуществующая (верхняя граница)
 
@@ -277,11 +206,8 @@ async function findTotalPages(unit, start, maxPages, progressCb) {
     }
   }
 
-  // Если экспонента дошла до maxPages без провала — вернуть lo
   if (failedAt === null) return lo;
 
-  // Шаг 2: бинарный поиск в диапазоне (lo … failedAt)
-  // Инвариант: lo — существует, failedAt — не существует
   let hi = failedAt;
 
   while (lo < hi - 1) {
@@ -297,11 +223,6 @@ async function findTotalPages(unit, start, maxPages, progressCb) {
 
 // ── Скачать весь документ ────────────────────────────────────────────────────
 
-/**
- * Скачивает страницы документа в диапазоне [fromPage … toPage].
- * @param {number|null} overrideFrom — первая страница (null = из настроек/авто)
- * @param {number|null} overrideTo   — последняя страница (null = до конца)
- */
 async function downloadAll(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
   isRunning = true;
@@ -321,14 +242,12 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
   const titleRaw   = getTitleFromPage();
   const folderName = `${sanitizeForFilename(titleRaw)}_unit_${unit}`;
 
-  // Лимит параллельных загрузок из настроек (или глобальная константа как запасной вариант)
   const concLimit = cfg.concurrentDownloads ?? MAX_CONCURRENT_DOWNLOADS;
 
   setIcon('active');
   sendStatus(cfg.createFolders ? `Папка: ${folderName}` : 'Файлы в корне загрузок');
 
   try {
-    // Начальная страница: из popup-слайдера → из настроек startFromCurrent → 1
     const start = overrideFrom != null
       ? overrideFrom
       : (cfg.startFromCurrent ? detectCurrentPage() : 1);
@@ -341,9 +260,8 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
       return;
     }
 
-    // Конечная страница: из popup-слайдера (если задана) или весь документ
     const total  = overrideTo != null ? Math.min(overrideTo, discovered) : discovered;
-    const pFrom  = overrideFrom != null ? overrideFrom : 1; // скачиваем с 1 если диапазон не задан
+    const pFrom  = overrideFrom != null ? overrideFrom : 1;
     const padWidth = String(total).length || 3;
 
     for (let p = pFrom; p <= total; p++) {
@@ -441,18 +359,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       break;
 
-    /**
-     * GET_STATE — отвечает на запрос popup при его открытии.
-     * currentPage позволяет popup синхронизировать левый ползунок диапазона.
-     */
     case 'GET_STATE':
       sendResponse({
         isRunning,
         isPaused,
         currentPage:    detectCurrentPage(),
-        isArchivePage:  !!getUnitId()   // popup показывает предупреждение если false
+        isArchivePage:  !!getUnitId()
       });
-      return true; // сигнал для асинхронного sendResponse
+      return true;
   }
 });
 
