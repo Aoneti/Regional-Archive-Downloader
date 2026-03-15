@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YARchive Downloader",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Скачивание документов из архива Ярославской области",
 
   "permissions": [
