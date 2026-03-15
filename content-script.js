@@ -123,7 +123,7 @@ function detectCurrentPage() {
   return 1;
 }
 
- ── Проверка существования страницы ─────────────────────────────────────────
+// ── Проверка существования страницы ─────────────────────────────────────────
 
 function testImage(url, timeout = TEST_TIMEOUT) {
   return new Promise(resolve => {
