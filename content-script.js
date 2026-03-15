@@ -102,7 +102,9 @@ function sanitizeForFilename(s) {
 }
 
 function imageUrl(unit, page) {
-  return `https://af.yar-archives.ru/archive27/image/${unit}?n=${page}`;
+  const base = location.origin;
+  const archiveNum = location.pathname.match(/\/archive(\d+)\//)?.[1] ?? '27';
+  return `${base}/archive${archiveNum}/image/${unit}?n=${page}`;
 }
 
 function pad(num, w) {
