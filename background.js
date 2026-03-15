@@ -30,7 +30,6 @@ chrome.runtime.onMessage.addListener((msg, _sender) => {
         if (chrome.runtime.lastError) {
           console.warn('[YARchive] download error:', chrome.runtime.lastError.message);
         }
-        // downloadId используется content-script'ом если понадобится отслеживание
         void downloadId;
       }
     );
@@ -47,8 +46,6 @@ chrome.runtime.onMessage.addListener((msg, _sender) => {
     return;
   }
 
-    // Service Worker не гарантирует, что popup открыт. Callback подавляет
-  // штатную ошибку "Could not establish connection" когда popup закрыт.
   if (msg.type === 'STATUS' || msg.type === 'PROGRESS' || msg.type === 'DONE') {
     chrome.runtime.sendMessage(msg, suppressLastError);
     return;
