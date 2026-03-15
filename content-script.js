@@ -1,14 +1,18 @@
-console.log('[Yar] content-script loaded (settings-aware)');
+const DEBUG = false;
+const log   = (...args) => DEBUG && console.log('[YARchive]', ...args);
+
+// ── Настройки ────────────────────────────────────────────────────────────────
 
 const DEFAULTS = {
-  createFolders: true,
-  delayMs: 250,
-  maxPages: 1500,
+  createFolders:    true,
+  delayMs:          250,
+  maxPages:         1500,
   startFromCurrent: true,
-  theme: 'light'
+  theme:            'light'
 };
 
-let settingsCache = Object.assign({}, DEFAULTS);
+/** @type {object|null} null означает «кэш не загружен» */
+let settingsCache = null;
 
 function getSettings() {
   return new Promise(resolve => {
@@ -26,9 +30,18 @@ async function ensureSettings() {
   return settingsCache;
 }
 
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync') {
+    settingsCache = null;
+    log('settings cache invalidated');
+  }
+});
+
+// ── Состояние загрузки ───────────────────────────────────────────────────────
+
 const TEST_TIMEOUT = 6000;
 
-let isPaused = false;
+let isPaused  = false;
 let isStopped = false;
 let isRunning = false;
 
@@ -42,12 +55,14 @@ async function waitIfPaused() {
   if (isStopped) throw new Error('stopped');
 }
 
+// ── Хелперы общения с background/popup ──────────────────────────────────────
+
 function sendStatus(text) {
   chrome.runtime.sendMessage({ type: 'STATUS', text });
 }
 
 function sendProgress(cur, total) {
-  const percent = total > 0 ? Math.round(cur / total * 100) : 0;
+  const percent = total > 0 ? Math.round((cur / total) * 100) : 0;
   chrome.runtime.sendMessage({ type: 'PROGRESS', percent });
 }
 
@@ -58,6 +73,8 @@ function sendDone(text) {
 function setIcon(state) {
   chrome.runtime.sendMessage({ type: 'SET_ICON', state });
 }
+
+// ── Утилиты DOM / URL ────────────────────────────────────────────────────────
 
 function getUnitId() {
   const m = location.pathname.match(/\/unit\/(\d+)/);
@@ -95,46 +112,93 @@ function detectCurrentPage() {
         const m = img.src.match(/[?&]n=(\d+)/);
         if (m) return Number(m[1]);
       }
-    } catch (e) {}
+    } catch (e) {
+      log('detectCurrentPage error:', e);
+    }
   }
   return 1;
 }
+
+// ── Проверка существования страницы ─────────────────────────────────────────
 
 function testImage(url, timeout = TEST_TIMEOUT) {
   return new Promise(resolve => {
     const img = new Image();
     let done = false;
-    const t = setTimeout(() => {
-      if (!done) { done = true; resolve(false); }
-    }, timeout);
 
-    img.onload = () => { if (!done) { done = true; clearTimeout(t); resolve(true); } };
-    img.onerror = () => { if (!done) { done = true; clearTimeout(t); resolve(false); } };
+    const finish = (result) => {
+      if (!done) {
+        done = true;
+        clearTimeout(t);
+        img.onload  = null;
+        img.onerror = null;
+        img.src = '';  
+        resolve(result);
+      }
+    };
+
+    const t = setTimeout(() => finish(false), timeout);
+    img.onload  = () => finish(true);
+    img.onerror = () => finish(false);
 
     img.src = url + '&_ts=' + Date.now();
   });
 }
 
+// ── Бинарный поиск числа страниц ────────────────────────────────────────────
+
 async function findTotalPages(unit, start, maxPages, progressCb) {
-  let last = 0;
-  for (let i = start; i <= maxPages; i++) {
+  await waitIfPaused();
+
+  progressCb && progressCb(`Проверка страницы ${start}…`);
+  const startExists = await testImage(imageUrl(unit, start));
+  if (!startExists) return 0;
+
+  let lo       = start; 
+  let failedAt = null;  
+
+  let probe = start;
+  while (probe <= maxPages) {
     await waitIfPaused();
-    progressCb && progressCb(`Проверка страницы ${i}…`);
-    const ok = await testImage(imageUrl(unit, i));
-    if (!ok) break;
-    last = i;
+    const next = Math.min(probe * 2, maxPages);
+    progressCb && progressCb(`Проверка страницы ${next}…`);
+    const ok = await testImage(imageUrl(unit, next));
+    if (ok) {
+      lo = next;
+      if (next === maxPages) return maxPages; 
+      probe = next;
+    } else {
+      failedAt = next;
+      break;
+    }
   }
-  return last;
+
+  if (failedAt === null) return lo;
+
+  let hi = failedAt;
+
+  while (lo < hi - 1) {
+    await waitIfPaused();
+    const mid = Math.floor((lo + hi) / 2);
+    progressCb && progressCb(`Уточнение: страница ${mid}…`);
+    const ok = await testImage(imageUrl(unit, mid));
+    if (ok) lo = mid; else hi = mid;
+  }
+
+  return lo;
 }
+
+// ── Скачать весь документ ────────────────────────────────────────────────────
 
 async function downloadAll() {
   if (isRunning) return;
   isRunning = true;
-  isPaused = false;
+  isPaused  = false;
   isStopped = false;
 
-  const cfg = await getSettings();
+  const cfg  = await ensureSettings();
   const unit = getUnitId();
+
   if (!unit) {
     sendDone('Не удалось определить unit');
     isRunning = false;
@@ -142,7 +206,7 @@ async function downloadAll() {
     return;
   }
 
-  const titleRaw = getTitleFromPage();
+  const titleRaw   = getTitleFromPage();
   const folderName = `${sanitizeForFilename(titleRaw)}_unit_${unit}`;
 
   setIcon('active');
@@ -151,6 +215,7 @@ async function downloadAll() {
   try {
     const start = cfg.startFromCurrent ? detectCurrentPage() : 1;
     sendStatus(`Поиск страниц, начиная с ${start}…`);
+
     const total = await findTotalPages(unit, start, cfg.maxPages, (t) => sendStatus(t));
 
     if (!total) {
@@ -169,37 +234,42 @@ async function downloadAll() {
         ? `${folderName}/${pad(p, padWidth)}.jpg`
         : `unit_${unit}_p${pad(p, padWidth)}.jpg`;
 
-      chrome.runtime.sendMessage({
-        type: 'DOWNLOAD',
-        url: imageUrl(unit, p),
-        filename
-      });
+      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(unit, p), filename });
 
       await sleep(cfg.delayMs);
     }
 
     sendDone(`Готово: ${total} стр.`);
+
   } catch (e) {
-    sendDone(e.message === 'stopped' ? 'Остановлено' : 'Ошибка: ' + e.message);
+    if (e.message === 'stopped') {
+      sendDone('Остановлено');
+    } else {
+      console.error('[YARchive] downloadAll error:', e);
+      sendDone('Ошибка: ' + e.message);
+    }
   } finally {
     isRunning = false;
-    isPaused = false;
+    isPaused  = false;
     isStopped = false;
     setIcon('inactive');
   }
 }
 
+// ── Скачать текущую страницу ─────────────────────────────────────────────────
+
 async function downloadCurrent() {
-  const cfg = await getSettings();
+  const cfg  = await ensureSettings();
   const unit = getUnitId();
+
   if (!unit) {
     sendStatus('Unit не определён');
     return;
   }
 
-  const titleRaw = getTitleFromPage();
+  const titleRaw   = getTitleFromPage();
   const folderName = `${sanitizeForFilename(titleRaw)}_unit_${unit}`;
-  const p = detectCurrentPage();
+  const p          = detectCurrentPage();
 
   setIcon('active');
 
@@ -207,26 +277,57 @@ async function downloadCurrent() {
     ? `${folderName}/${pad(p, 3)}.jpg`
     : `unit_${unit}_p${pad(p, 3)}.jpg`;
 
-  chrome.runtime.sendMessage({
-    type: 'DOWNLOAD',
-    url: imageUrl(unit, p),
-    filename
-  });
+  chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(unit, p), filename });
 
   sendStatus(`Скачана стр. ${p}`);
   setTimeout(() => setIcon('inactive'), 1200);
 }
 
+// ── Обработчик сообщений от popup ────────────────────────────────────────────
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || !msg.type) return;
-  if (msg.type === 'DOWNLOAD_ALL') downloadAll();
-  if (msg.type === 'DOWNLOAD_CURRENT') downloadCurrent();
-  if (msg.type === 'PAUSE') { if (isRunning) { isPaused = true; sendStatus('Пауза'); } }
-  if (msg.type === 'RESUME') { if (isRunning) { isPaused = false; sendStatus('Продолжение…'); } }
-  if (msg.type === 'STOP') { if (isRunning) { isStopped = true; isPaused = false; sendStatus('Остановка…'); } }
+
+  switch (msg.type) {
+    case 'DOWNLOAD_ALL':     downloadAll();   break;
+    case 'DOWNLOAD_CURRENT': downloadCurrent(); break;
+
+    case 'PAUSE':
+      if (isRunning && !isPaused) {
+        isPaused = true;
+        sendStatus('Пауза');
+      }
+      break;
+
+    case 'RESUME':
+      if (isRunning && isPaused) {
+        isPaused = false;
+        sendStatus('Продолжение…');
+      }
+      break;
+
+    case 'STOP':
+      if (isRunning) {
+        isStopped = true;
+        isPaused  = false;
+        sendStatus('Остановка…');
+      }
+      break;
+      
+    case 'GET_STATE':
+      return true; 
+  }
 });
 
-getSettings().then(cfg => {
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.type === 'GET_STATE') {
+    sendResponse({ isRunning, isPaused });
+  }
+});
+
+// ── Инициализация иконки при загрузке страницы ──────────────────────────────
+
+ensureSettings().then(() => {
   try {
     const unit = getUnitId();
     setIcon(unit ? 'active' : 'inactive');
@@ -234,3 +335,5 @@ getSettings().then(cfg => {
     setIcon('inactive');
   }
 });
+
+log('content-script loaded');
