@@ -45,7 +45,6 @@
       "matches": [
   "https://af.yar-archives.ru/*",
   "https://gosarchive.gov35.ru/*"
-],
       ],
       "js": [
         "content-script.js"
