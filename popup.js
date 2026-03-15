@@ -1,21 +1,3 @@
-/**
- * popup.js — интерфейс YARchive Downloader
- *
- * Улучшения UI:
- *  1. Dual-thumb range slider — Pointer Events API (мышь + тач).
- *     Клавиши ← / → (Shift = шаг 10). Дабл-клик по треку — сброс.
- *  2. Баннер «не та страница» — показывается когда popup открыт не на
- *     странице документа архива. Пропадает как только страница подходящая.
- *  3. Итоговая карточка после завершения — страниц, папка, время, скорость.
- *  4. Toast-уведомление при завершении / ошибке / остановке.
- *  5. ETA + скорость под прогресс-баром (появляется через 3 сек).
- *  6. Shimmer на прогресс-баре только при активной загрузке.
- *  7. Spinner в кнопке на этапе поиска страниц.
- *  8. Keyboard: Пробел = пауза, Escape = стоп, Alt+S = настройки.
- *  9. Синхронизация maxPages слайдера с настройками.
- * 10. Кнопки заблокированы когда popup открыт не на странице архива.
- */
-
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const btnAll           = document.getElementById('btnAll');
@@ -48,15 +30,14 @@ const hintToWrap       = document.getElementById('hintToWrap');
 
 let isRunning      = false;
 let isPaused       = false;
-let isArchivePage  = false;   // подходящая ли страница для скачивания
+let isArchivePage  = false;  
 
 let rangeMax  = 1500;
 const RANGE_MIN = 1;
 
 let fromPage = 1;
-let toPage   = null;   // null = до конца
+let toPage   = null;
 
-/** Для ETA и итоговой карточки */
 let downloadStartTime  = null;
 let downloadedPages    = 0;
 let totalPages         = 0;
@@ -66,11 +47,6 @@ let lastStatusText     = '';
 
 let toastTimer = null;
 
-/**
- * Показывает всплывающее уведомление внизу popup.
- * @param {string} text
- * @param {number} [durationMs=2800]
- */
 function showToast(text, durationMs = 2800) {
   if (toastTimer) { clearTimeout(toastTimer); }
   toastEl.textContent = text;
@@ -83,11 +59,6 @@ function showToast(text, durationMs = 2800) {
 
 // ── Итоговая карточка ─────────────────────────────────────────────────────────
 
-/**
- * Показывает карточку с итогами после завершения / остановки.
- * @param {'done'|'stopped'|'error'} kind
- * @param {string} message
- */
 function showSummary(kind, message) {
   const elapsed = downloadStartTime
     ? Math.round((Date.now() - downloadStartTime) / 1000)
@@ -134,7 +105,6 @@ function setArchivePage(isArchive) {
   isArchivePage = isArchive;
   bannerNotArchive.classList.toggle('warn', !isArchive);
   bannerNotArchive.style.display = isArchive ? 'none' : 'flex';
-  // Заблокировать основные кнопки если не на нужной странице
   btnAll.disabled     = !isArchive || isRunning;
   btnCurrent.disabled = !isArchive || isRunning;
 }
@@ -182,11 +152,6 @@ function updateRangeUI() {
   thumbEnd.setAttribute('aria-valuemax', rangeMax);
 }
 
-/**
- * Привязывает Pointer Events к ползунку.
- * Pointer Events API работает для мыши, стилуса и тач без дополнительных
- * обработчиков — единая модель событий для всех устройств.
- */
 function bindThumb(thumb, which) {
   thumb.addEventListener('pointerdown', e => {
     if (isRunning || !isArchivePage) return;
@@ -239,7 +204,6 @@ function bindThumb(thumb, which) {
 bindThumb(thumbStart, 'start');
 bindThumb(thumbEnd,   'end');
 
-// Двойной клик по треку → сброс к «весь документ»
 rangeTrack.addEventListener('dblclick', () => {
   if (isRunning || !isArchivePage) return;
   fromPage = 1;
@@ -428,8 +392,7 @@ chrome.runtime.onMessage.addListener(msg => {
       setProgress(isStopped ? (downloadedPages / (totalPages || 1) * 100) : 100,
                   downloadedPages, totalPages);
       setRunningUI(false, false);
-
-      // Итоговая карточка только если что-то было загружено
+      
       if (downloadedPages > 0) {
         showSummary(isStopped ? 'stopped' : isError ? 'error' : 'done', text);
       }
@@ -461,7 +424,6 @@ chrome.runtime.onMessage.addListener(msg => {
 
 (function init() {
   setRunningUI(false, false);
-  // Пока не знаем статус страницы — заблокируем кнопки
   setArchivePage(false);
 
   chrome.storage.sync.get({ theme: 'light', maxPages: 1500 }, items => {
@@ -472,10 +434,8 @@ chrome.runtime.onMessage.addListener(msg => {
     updateRangeUI();
   });
 
-  // Запросить состояние у content-script
   sendToActiveTab({ type: 'GET_STATE' }, state => {
     if (chrome.runtime.lastError) {
-      // content-script не отвечает (не на странице af.yar-archives.ru)
       setArchivePage(false);
       return;
     }
@@ -484,16 +444,13 @@ chrome.runtime.onMessage.addListener(msg => {
       return;
     }
 
-    // Применить статус страницы
     setArchivePage(!!state.isArchivePage);
 
-    // Синхронизировать левый ползунок с текущей страницей документа
     if (state.currentPage && state.currentPage > 1) {
       fromPage = state.currentPage;
       updateRangeUI();
     }
 
-    // Восстановить состояние если загрузка уже шла
     if (state.isRunning) {
       downloadStartTime = Date.now();
       setRunningUI(true, state.isPaused);
