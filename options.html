@@ -1,426 +1,440 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <title>YARchive Downloader — Настройки</title>
-  <style>
-    /* ── Переменные ───────────────────────────────────────────────────────── */
-    :root {
-      --bg:         #ffffff;
-      --text:       #1a1a1a;
-      --muted:      #777777;
-      --panel:      #f5f5f5;
-      --border:     #e0e0e0;
-      --accent:     #7FBE00;
-      --accent-dim: rgba(127,190,0,0.12);
-      --danger:     #d93d3d;
-      --radius-sm:  6px;
-      --radius-md:  9px;
-    }
-    html.dark {
-      --bg:           #131313;
-      --text:         #e8e8e8;
-      --muted:        #686868;
-      --panel:        #1e1e1e;
-      --border:       #2e2e2e;
-      --accent:       #F46A15;
-      --accent-hover: #E06115;
-      --accent-dim:   rgba(244,106,21,0.12);
-    }
+<meta charset="utf-8">
+<title>YARchive Downloader — Настройки</title>
+<style>
+/* ── Переменные ───────────────────────────────────────────────────────── */
+:root {
+  --bg:           #ffffff;
+  --text:         #1a1a1a;
+  --muted:        #777777;
+  --panel:        #f5f5f5;
+  --border:       #e0e0e0;
+  --accent:       #7FBE00;  
+  --accent-hover: #6aab00; 
+  --accent-dim:   rgba(127,190,0,0.12);
+  --danger:       #d93d3d;
+  --radius-sm:    6px;
+  --radius-md:    9px;
+}
 
-    *, *::before, *::after { box-sizing: border-box; }
+html.dark {
+  --bg:           #131313;
+  --text:         #e8e8e8;
+  --muted:        #686868;
+  --panel:        #1e1e1e;
+  --border:       #2e2e2e;
+  --accent:       #F46A15;
+  --accent-hover: #E06115;
+  --accent-dim:   rgba(244,106,21,0.12);
+}
 
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      font-size: 13px;
-      margin: 0;
-      padding: 20px 24px 28px;
-      max-width: 540px;
-      background: var(--bg);
-      color: var(--text);
-      -webkit-font-smoothing: antialiased;
-    }
+*, *::before, *::after { box-sizing: border-box; }
 
-    /* ── Шапка ───────────────────────────────────────────────────────────── */
-    .page-title {
-      font-size: 17px;
-      font-weight: 700;
-      margin: 0 0 18px;
-      letter-spacing: -0.3px;
-    }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 13px;
+  margin: 0;
+  padding: 24px 24px 32px;
+  max-width: 540px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
 
-    /* ── Секции ──────────────────────────────────────────────────────────── */
-    .section {
-      margin-bottom: 12px;
-      padding: 14px 16px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: var(--panel);
-    }
-    .section-title {
-      display: block;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--muted);
-      margin-bottom: 12px;
-    }
+/* ── Шапка ───────────────────────────────────────────────────────────── */
+.page-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 20px;
+  letter-spacing: -0.3px;
+}
 
-    /* ── Строка с меткой ─────────────────────────────────────────────────── */
-    .field {
-      margin-bottom: 14px;
-    }
-    .field:last-child { margin-bottom: 0; }
+/* ── Секции ──────────────────────────────────────────────────────────── */
+.section {
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
 
-    .field-label {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: 8px;
-    }
-    .field-name {
-      font-size: 13px;
-      font-weight: 500;
-    }
-    .field-value {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--accent);
-      font-variant-numeric: tabular-nums;
-      min-width: 40px;
-      text-align: right;
-    }
+.section-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
 
-    /* ── Slider ──────────────────────────────────────────────────────────── */
-    .slider-wrap {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    input[type="range"] {
-      flex: 1;
-      height: 3px;
-      appearance: none;
-      -webkit-appearance: none;
-      background: var(--border);
-      border-radius: 2px;
-      outline: none;
-      cursor: pointer;
-      accent-color: var(--accent);
-    }
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--accent);
-      border: 2.5px solid var(--bg);
-      box-shadow: 0 0 0 1.5px var(--accent);
-      cursor: grab;
-      transition: transform 0.1s;
-    }
-    input[type="range"]::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.2); }
-    input[type="range"]:focus-visible::-webkit-slider-thumb {
-      box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent);
-    }
-    input[type="number"].mini {
-      width: 68px;
-      padding: 5px 7px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--text);
-      font-family: inherit;
-      font-size: 12px;
-      font-variant-numeric: tabular-nums;
-      text-align: center;
-      flex-shrink: 0;
-    }
-    input[type="number"].mini:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* ── Строка с меткой ─────────────────────────────────────────────────── */
+.field {
+  margin-bottom: 16px;
+}
+.field:last-child { margin-bottom: 0; }
 
-    /* ── Чипы пресетов ───────────────────────────────────────────────────── */
-    .presets {
-      display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-    }
-    .preset {
-      padding: 3px 9px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 11px;
-      font-family: inherit;
-      font-weight: 500;
-      transition: background 0.12s, color 0.12s, border-color 0.12s;
-    }
-    .preset:hover { border-color: var(--accent); color: var(--accent); }
-    .preset.active {
-      background: var(--accent-dim);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
+.field-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.field-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.field-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+}
 
-    /* ── Hint ────────────────────────────────────────────────────────────── */
-    .hint {
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 6px;
-      line-height: 1.5;
-    }
-    code {
-      font-family: monospace;
-      font-size: 11px;
-      background: var(--border);
-      padding: 1px 4px;
-      border-radius: 3px;
-    }
+/* ── Slider ──────────────────────────────────────────────────────────── */
+.slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-    /* ── Toggle строка (checkbox) ────────────────────────────────────────── */
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    .toggle-row:last-child { margin-bottom: 0; }
-    .toggle-checkbox {
-      position: relative;
-      width: 30px;
-      height: 17px;
-      flex-shrink: 0;
-    }
-    .toggle-checkbox input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-      position: absolute;
-    }
-    .toggle-track {
-      position: absolute;
-      inset: 0;
-      background: var(--border);
-      border-radius: 9px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .toggle-track::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 13px;
-      height: 13px;
-      border-radius: 50%;
-      background: #fff;
-      transition: transform 0.2s;
-    }
-    .toggle-checkbox input:checked + .toggle-track { background: var(--accent); }
-    .toggle-checkbox input:checked + .toggle-track::after { transform: translateX(13px); }
-    .toggle-checkbox input:focus-visible + .toggle-track {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
-    .toggle-label {
-      font-size: 13px;
-      cursor: pointer;
-      line-height: 1.4;
-    }
+input[type="range"] {
+  flex: 1;
+  height: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2.5px solid var(--bg);
+  box-shadow: 0 0 0 1.5px var(--accent);
+  cursor: grab;
+  transition: transform 0.1s;
+}
+input[type="range"]::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.2); }
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent);
+}
 
-    /* ── Тема ────────────────────────────────────────────────────────────── */
-    .theme-btns {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-    }
-    .theme-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-      padding: 9px;
-      border-radius: var(--radius-sm);
-      border: 1.5px solid var(--border);
-      background: var(--bg);
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 12px;
-      font-family: inherit;
-      font-weight: 500;
-      transition: border-color 0.13s, color 0.13s, background 0.13s;
-    }
-    .theme-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .theme-btn.active {
-      border-color: var(--accent);
-      background: var(--accent-dim);
-      color: var(--accent);
-    }
-    .theme-btn .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      border: 1.5px solid currentColor;
-      flex-shrink: 0;
-    }
-    .theme-btn.active .dot {
-      background: var(--accent);
-      box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--accent);
-    }
+input[type="number"].mini {
+  width: 68px;
+  padding: 5px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+input[type="number"].mini:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+/* Визуальная обратная связь при некорректном значении */
+input[type="number"].mini:invalid,
+input[type="number"].mini.out-of-range {
+  border-color: var(--danger);
+  outline-color: var(--danger);
+}
 
-    /* ── Кнопки сохранения ───────────────────────────────────────────────── */
-    .actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-top: 16px;
-    }
-    .btn {
-      padding: 9px 18px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 500;
-      transition: background 0.12s;
-    }
-    .btn-save {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-      font-weight: 700;
-    }
-    .btn-save:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-    .btn-reset { background: var(--bg); color: var(--text); }
-    .btn-reset:hover { background: var(--panel); }
-    html.dark .btn-reset { border-color: #555555; }
+/* ── Чипы пресетов ───────────────────────────────────────────────────── */
+.presets {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.preset {
+  padding: 3px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.preset:hover { border-color: var(--accent); color: var(--accent); }
+.preset.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
-    /* ── Сообщение обратной связи ────────────────────────────────────────── */
-    .msg {
-      font-size: 12px;
-      margin-left: 2px;
-      align-self: center;
-      transition: opacity 0.2s;
-    }
-    .msg--ok    { color: var(--accent); }
-    .msg--error { color: var(--danger); font-weight: 600; }
-  </style>
+/* ── Hint ────────────────────────────────────────────────────────────── */
+.hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+code {
+  font-family: monospace;
+  font-size: 11px;
+  background: var(--border);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ── Toggle строка (checkbox) ────────────────────────────────────────── */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.toggle-row:last-child { margin-bottom: 0; }
+
+.toggle-checkbox {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  flex-shrink: 0;
+}
+.toggle-checkbox input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.toggle-checkbox input:checked + .toggle-track { background: var(--accent); }
+.toggle-checkbox input:checked + .toggle-track::after { transform: translateX(13px); }
+.toggle-checkbox input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.toggle-label {
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+/* ── Тема ────────────────────────────────────────────────────────────── */
+.theme-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.theme-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  transition: border-color 0.13s, color 0.13s, background 0.13s;
+}
+.theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+.theme-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.theme-btn .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  flex-shrink: 0;
+}
+.theme-btn.active .dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--accent);
+}
+
+/* ── Кнопки сохранения ───────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
+}
+.btn {
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.12s;
+}
+.btn-save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.btn-save:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-reset { background: var(--bg); color: var(--text); }
+.btn-reset:hover { background: var(--panel); }
+html.dark .btn-reset { border-color: #555555; }
+
+/* ── Сообщение обратной связи ────────────────────────────────────────── */
+.msg {
+  font-size: 12px;
+  margin-left: 2px;
+  align-self: center;
+  transition: opacity 0.2s;
+}
+.msg--ok    { color: var(--accent); }
+.msg--error { color: var(--danger); font-weight: 600; }
+</style>
 </head>
 <body>
-  <h1 class="page-title">Настройки YARchive Downloader</h1>
 
-  <!-- Задержка -->
-  <div class="section">
-    <span class="section-title">Скорость загрузки</span>
+<h1 class="page-title">Настройки YARchive Downloader</h1>
 
-    <div class="field">
-      <div class="field-label">
-        <span class="field-name">Задержка между файлами</span>
-        <span class="field-value"><span id="delayVal">250</span> мс</span>
-      </div>
-      <div class="slider-wrap">
-        <input type="range" id="delaySlider" min="0" max="3000" step="50" value="250"
-               aria-label="Задержка в миллисекундах">
-        <input type="number" class="mini" id="delayMs" min="0" max="3000" step="50" value="250"
-               aria-label="Задержка точное значение">
-      </div>
-      <div class="presets" role="group" aria-label="Пресеты задержки">
-        <button class="preset" data-target="delayMs" data-value="0"    title="Без задержки">⚡ Быстро</button>
-        <button class="preset active" data-target="delayMs" data-value="250"  title="250 мс">✦ Нормально</button>
-        <button class="preset" data-target="delayMs" data-value="600"  title="600 мс">🐢 Медленно</button>
-        <button class="preset" data-target="delayMs" data-value="1200" title="1200 мс — уважительно к серверу">🌿 Вежливо</button>
-      </div>
-      <div class="hint">Время ожидания между отправкой загрузок. Меньше — быстрее, но больше нагрузка на сервер архива.</div>
+<!-- Задержка -->
+<div class="section">
+  <span class="section-title">Скорость загрузки</span>
+  <div class="field">
+    <div class="field-label">
+      <span class="field-name">Задержка между файлами</span>
+      <span class="field-value"><span id="delayVal">250</span> мс</span>
     </div>
+    <div class="slider-wrap">
+      <input type="range" id="delaySlider" min="0" max="3000" step="50" value="250"
+             aria-label="Задержка в миллисекундах">
+      <input type="number" class="mini" id="delayMs"
+             min="0" max="3000" step="50" value="250"
+             aria-label="Задержка точное значение">
+    </div>
+    <div class="presets" role="group" aria-label="Пресеты задержки">
+      <button class="preset" data-target="delayMs" data-value="0"    title="Без задержки">⚡ Быстро</button>
+      <button class="preset active" data-target="delayMs" data-value="250"  title="250 мс">✦ Нормально</button>
+      <button class="preset" data-target="delayMs" data-value="600"  title="600 мс">🐢 Медленно</button>
+      <button class="preset" data-target="delayMs" data-value="1200" title="1200 мс — уважительно к серверу">🌿 Вежливо</button>
+    </div>
+    <div class="hint">Время ожидания между отправкой загрузок. Меньше — быстрее, но больше нагрузка на сервер архива.</div>
   </div>
+</div>
 
-  <!-- Ограничения -->
-  <div class="section">
-    <span class="section-title">Ограничения</span>
-
-    <div class="field">
-      <div class="field-label">
-        <span class="field-name">Максимум страниц для поиска</span>
-        <span class="field-value"><span id="maxPagesVal">1500</span></span>
-      </div>
-      <div class="slider-wrap">
-        <input type="range" id="maxPagesSlider" min="1" max="5000" step="1" value="1500"
-               aria-label="Максимум страниц">
-        <input type="number" class="mini" id="maxPages" min="1" max="5000" step="1" value="1500"
-               aria-label="Максимум страниц точное значение">
-      </div>
-      <div class="hint">Лимит страниц при автообнаружении. Увеличьте если документ длиннее 1500 стр.</div>
+<!-- Ограничения -->
+<div class="section">
+  <span class="section-title">Ограничения</span>
+  <div class="field">
+    <div class="field-label">
+      <span class="field-name">Максимум страниц для поиска</span>
+      <span class="field-value"><span id="maxPagesVal">1500</span></span>
     </div>
-
-    <div class="field">
-      <div class="field-label">
-        <span class="field-name">Параллельные загрузки</span>
-        <span class="field-value"><span id="concurrentVal">4</span></span>
-      </div>
-      <div class="slider-wrap">
-        <input type="range" id="concurrentSlider" min="1" max="8" step="1" value="4"
-               aria-label="Количество параллельных загрузок">
-        <input type="number" class="mini" id="concurrentDownloads" min="1" max="8" step="1" value="4"
-               aria-label="Параллельные загрузки точное значение">
-      </div>
-      <div class="hint">Сколько файлов скачивается одновременно. Больше — быстрее, но тяжелее для браузера.</div>
+    <div class="slider-wrap">
+      <input type="range" id="maxPagesSlider" min="1" max="5000" step="1" value="1500"
+             aria-label="Максимум страниц">
+      <input type="number" class="mini" id="maxPages"
+             min="1" max="5000" step="1" value="1500"
+             aria-label="Максимум страниц точное значение">
     </div>
+    <div class="hint">Лимит страниц при автообнаружении. Увеличьте если документ длиннее 1500 стр.</div>
   </div>
-
-  <!-- Поведение -->
-  <div class="section">
-    <span class="section-title">Поведение</span>
-
-    <div class="toggle-row">
-      <label class="toggle-checkbox">
-        <input type="checkbox" id="startFromCurrent">
-        <span class="toggle-track"></span>
-      </label>
-      <label class="toggle-label" for="startFromCurrent">
-        Начинать поиск с текущей открытой страницы
-      </label>
+  <div class="field">
+    <div class="field-label">
+      <span class="field-name">Параллельные загрузки</span>
+      <span class="field-value"><span id="concurrentVal">4</span></span>
     </div>
-    <div class="toggle-row">
-      <label class="toggle-checkbox">
-        <input type="checkbox" id="createFolders" checked>
-        <span class="toggle-track"></span>
-      </label>
-      <label class="toggle-label" for="createFolders">
-        Создавать папки для каждого документа
-        <div class="hint" style="margin-top:2px">
-          Если выключено — файлы сохраняются в корень загрузок как <code>unit_ID_pNNN.jpg</code>
-        </div>
-      </label>
+    <div class="slider-wrap">
+      <input type="range" id="concurrentSlider" min="1" max="8" step="1" value="4"
+             aria-label="Количество параллельных загрузок">
+      <input type="number" class="mini" id="concurrentDownloads"
+             min="1" max="8" step="1" value="4"
+             aria-label="Параллельные загрузки точное значение">
     </div>
+    <div class="hint">Сколько файлов скачивается одновременно. Больше — быстрее, но тяжелее для браузера.</div>
   </div>
+</div>
 
-  <!-- Тема -->
-  <div class="section">
-    <span class="section-title">Тема интерфейса</span>
-    <div class="theme-btns" role="radiogroup" aria-label="Выбор темы">
-      <button class="theme-btn active" id="themeLightBtn" data-theme="light" role="radio" aria-checked="true">
-        <span class="dot"></span> Светлая
-      </button>
-      <button class="theme-btn" id="themeDarkBtn" data-theme="dark" role="radio" aria-checked="false">
-        <span class="dot"></span> Тёмная
-      </button>
-    </div>
-    <!-- Скрытые radio для совместимости с options.js -->
-    <input type="radio" name="theme" value="light" id="themeLight" style="display:none" checked>
-    <input type="radio" name="theme" value="dark"  id="themeDark"  style="display:none">
+<!-- Поведение -->
+<div class="section">
+  <span class="section-title">Поведение</span>
+  <div class="toggle-row">
+    <label class="toggle-checkbox">
+      <input type="checkbox" id="startFromCurrent">
+      <span class="toggle-track"></span>
+    </label>
+    <label class="toggle-label" for="startFromCurrent">
+      Начинать поиск с текущей открытой страницы
+    </label>
   </div>
-
-  <!-- Кнопки -->
-  <div class="actions">
-    <button class="btn btn-save"  id="saveBtn">Сохранить</button>
-    <button class="btn btn-reset" id="resetBtn">Сбросить</button>
-    <span id="msg" class="msg" aria-live="polite"></span>
+  <div class="toggle-row">
+    <label class="toggle-checkbox">
+      <input type="checkbox" id="createFolders" checked>
+      <span class="toggle-track"></span>
+    </label>
+    <label class="toggle-label" for="createFolders">
+      Создавать папки для каждого документа
+      <div class="hint" style="margin-top:2px">
+        Если выключено — файлы сохраняются в корень загрузок как <code>unit_ID_pNNN.jpg</code>
+      </div>
+    </label>
   </div>
+</div>
 
-  <script src="options.js"></script>
+<!-- Тема -->
+<div class="section">
+  <span class="section-title">Тема интерфейса</span>
+  <div class="theme-btns" role="radiogroup" aria-label="Выбор темы">
+    <button class="theme-btn active" id="themeLightBtn" data-theme="light" role="radio" aria-checked="true">
+      <span class="dot"></span> Светлая
+    </button>
+    <button class="theme-btn" id="themeDarkBtn" data-theme="dark" role="radio" aria-checked="false">
+      <span class="dot"></span> Тёмная
+    </button>
+  </div>
+</div>
+
+<!-- Кнопки -->
+<div class="actions">
+  <button class="btn btn-save" id="saveBtn">Сохранить</button>
+  <button class="btn btn-reset" id="resetBtn">Сбросить</button>
+  <span id="msg" class="msg" aria-live="polite"></span>
+</div>
+
+<script src="options.js"></script>
 </body>
 </html>

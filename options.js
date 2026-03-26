@@ -25,8 +25,7 @@ function applyTheme(theme) {
   $('themeLightBtn').setAttribute('aria-checked', String(theme === 'light'));
   $('themeDarkBtn').classList.toggle('active', theme === 'dark');
   $('themeDarkBtn').setAttribute('aria-checked', String(theme === 'dark'));
-  $('themeLight').checked = (theme === 'light');
-  $('themeDark').checked  = (theme === 'dark');
+  // radio-инпуты удалены из HTML — тема читается через data-theme активной кнопки
 }
 
 $('themeLightBtn').addEventListener('click', () => applyTheme('light'));
@@ -121,8 +120,7 @@ function save() {
   $('maxPages').value            = maxPages;
   $('concurrentDownloads').value = concurrentDownloads;
 
-  const themeInput = document.querySelector('input[name="theme"]:checked');
-  const theme = themeInput ? themeInput.value : DEFAULTS.theme;
+  const theme = document.querySelector('.theme-btn.active')?.dataset.theme ?? DEFAULTS.theme;
 
   const toSave = {
     createFolders:       !!$('createFolders').checked,

@@ -1,517 +1,555 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <title>YARchive Downloader</title>
-  <style>
-    /* ── Переменные ───────────────────────────────────────────────────────── */
-    :root {
-      --bg:           #ffffff;
-      --text:         #1a1a1a;
-      --text-muted:   #888888;
-      --panel:        #f4f4f4;
-      --border:       #e2e2e2;
-      --accent:       #7FBE00;
-      --accent-hover: #6aab00;
-      --accent-dim:   rgba(127,190,0,0.15);
-      --danger:       #e05252;
-      --danger-hover: #c93c3c;
-      --warn-bg:      #fffbeb;
-      --warn-border:  #f8d861;
-      --warn-text:    #7a5c00;
-      --success-bg:   #fff5ee;
-      --success-border: #F46A15;
-      --radius-sm:    6px;
-      --radius-md:    9px;
-    }
-    html.dark {
-      --bg:             #131313;
-      --text:           #e8e8e8;
-      --text-muted:     #686868;
-      --panel:          #1e1e1e;
-      --border:         #2e2e2e;
-      --accent:         #F46A15;
-      --accent-hover:   #E06115;
-      --accent-dim:     rgba(244,106,21,0.12);
-      --warn-bg:        #1f1a06;
-      --warn-border:    #7a6200;
-      --warn-text:      #f8d06a;
-      --success-bg:     #1f0f05;
-      --success-border: #7a3510;
-    }
+<meta charset="utf-8">
+<title>YARchive Downloader</title>
+<style>
+/* ── Переменные ───────────────────────────────────────────────────────── */
+:root {
+  --bg:             #ffffff;
+  --text:           #1a1a1a;
+  --text-muted:     #888888;
+  --panel:          #f4f4f4;
+  --border:         #e2e2e2;
+  --accent:         #7FBE00;
+  --accent-hover:   #6aab00; 
+  --accent-dim:     rgba(127,190,0,0.15);
+  --danger:         #e05252;
+  --danger-hover:   #c93c3c;
+  --warn-bg:        #fffbeb;
+  --warn-border:    #f8d861;
+  --warn-text:      #7a5c00;
+  --success-bg:     #fff5ee;
+  --success-border: #F46A15; 
+  --radius-sm:      6px;
+  --radius-md:      9px;
+}
 
-    html.dark .header-gear {
+html.dark {
+  --bg:             #131313;
+  --text:           #e8e8e8;
+  --text-muted:     #686868;
+  --panel:          #1e1e1e;
+  --border:         #2e2e2e;
+  --accent:         #F46A15;
+  --accent-hover:   #E06115;
+  --accent-dim:     rgba(244,106,21,0.12);
+  --warn-bg:        #1f1a06;
+  --warn-border:    #7a6200;
+  --warn-text:      #f8d06a;
+  --success-bg:     #1f1005;
+  --success-border: #7a3510;
+}
+
+html.dark .header-gear {
   background: #2a2a2a;
 }
-    
-    *, *::before, *::after { box-sizing: border-box; }
 
-    body {
-      width: 284px;
-      margin: 0;
-      padding: 0;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      font-size: 13px;
-      background: var(--bg);
-      color: var(--text);
-      -webkit-font-smoothing: antialiased;
-    }
+*, *::before, *::after { box-sizing: border-box; }
 
-    /* ── Шапка ───────────────────────────────────────────────────────────── */
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 11px 14px 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    .header-title {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: -0.2px;
-    }
-    .header-gear {
-      background: #F4F4F4;
-      border: none;
-      cursor: pointer;
-      color: var(--text-muted);
-      font-size: 15px;
-      padding: 3px 5px;
-      border-radius: var(--radius-sm);
-      line-height: 1;
-      transition: background 0.12s, color 0.12s;
-    }
-    .header-gear:hover { color: var(--text); background: var(--panel); }
+body {
+  position: relative;
+  width: 284px;
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
 
-    /* ── Баннер «не та страница» ─────────────────────────────────────────── */
-    .banner {
-      display: none;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-    }
-    .banner.warn {
-      background: var(--warn-bg);
-      border-color: var(--warn-border);
-      display: flex;
-    }
-    .banner-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
-    .banner-text { font-size: 12px; color: var(--warn-text); line-height: 1.5; }
-    .banner-text a { color: var(--warn-text); font-weight: 600; }
+/* ── Шапка ───────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;    /* FIX [UI]: выровнено по spacing-scale 4/8/12/16 */
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
 
-    /* ── Секция диапазона ────────────────────────────────────────────────── */
-    .range-section {
-      padding: 10px 14px 6px;
-    }
-    .range-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: 9px;
-    }
-    .range-label {
-      font-size: 11px;
-      color: var(--text-muted);
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-    }
-    .range-value {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text);
-    }
+.header-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
 
-    /* Dual-thumb трек */
-    .range-wrap {
-      position: relative;
-      height: 22px;
-      display: flex;
-      align-items: center;
-      padding: 0 7px;
-      margin-bottom: 3px;
-      touch-action: none;
-    }
-    .range-track {
-      position: relative;
-      width: 100%;
-      height: 3px;
-      background: var(--border);
-      border-radius: 2px;
-    }
-    .range-fill {
-      position: absolute;
-      top: 0;
-      height: 100%;
-      background: var(--accent);
-      border-radius: 2px;
-      pointer-events: none;
-      transition: left 0.05s, width 0.05s;
-    }
-    .range-thumb {
-      position: absolute;
-      top: 50%;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--accent);
-      border: 2.5px solid var(--bg);
-      box-shadow: 0 0 0 1.5px var(--accent);
-      transform: translate(-50%, -50%);
-      cursor: grab;
-      z-index: 3;
-      touch-action: none;
-      transition: transform 0.1s, box-shadow 0.1s, left 0.05s;
-    }
-    .range-thumb:hover {
-      transform: translate(-50%, -50%) scale(1.18);
-      box-shadow: 0 0 0 4px var(--accent-dim);
-    }
-    .range-thumb:active { cursor: grabbing; }
-    .range-thumb.dragging {
-      transform: translate(-50%, -50%) scale(1.28);
-      box-shadow: 0 0 0 6px var(--accent-dim);
-      transition: transform 0.1s, box-shadow 0.1s;
-    }
-    .range-thumb:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent);
-    }
-    .range-thumb.disabled { cursor: not-allowed; opacity: 0.4; pointer-events: none; }
+.header-gear {
+  background: #F4F4F4;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 15px;
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+.header-gear:hover { color: var(--text); background: var(--panel); }
 
-    .range-hints {
-      display: flex;
-      justify-content: space-between;
-      padding: 0 7px;
-      font-size: 10px;
-      color: var(--text-muted);
-    }
-    .range-hints strong { color: var(--text); font-weight: 600; }
+/* ── Баннер «не та страница» ─────────────────────────────────────────── */
+.banner {
+  display: none;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.banner.warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  display: flex;
+}
+.banner-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.banner-text { font-size: 12px; color: var(--warn-text); line-height: 1.5; }
+/* FIX [High]: добавлен rel="noopener noreferrer" — в HTML ниже         */
+.banner-text a { color: var(--warn-text); font-weight: 600; }
 
-    /* ── Разделитель ─────────────────────────────────────────────────────── */
-    .sep { height: 1px; background: var(--border); }
+/* ── Секция диапазона ────────────────────────────────────────────────── */
+/* FIX [UI]: отступы приведены к spacing-scale                          */
+.range-section {
+  padding: 12px 14px 8px;
+}
 
-    /* ── Кнопки действий ─────────────────────────────────────────────────── */
-    .actions { padding: 10px 14px 8px; }
+.range-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.range-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.range-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
 
-    .btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-      width: 100%;
-      padding: 9px 12px;
-      border-radius: var(--radius-md);
-      border: 1px solid transparent;
-      cursor: pointer;
-      font-size: 13px;
-      font-family: inherit;
-      font-weight: 600;
-      line-height: 1;
-      transition: background 0.13s, border-color 0.13s, opacity 0.13s;
-    }
-    .btn-primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .btn-primary:hover:not(:disabled) {
-      background: var(--accent-hover);
-      border-color: var(--accent-hover);
-    }
-    .btn-secondary {
-      background: var(--panel);
-      border-color: var(--border);
-      color: var(--text);
-      font-weight: 500;
-      margin-top: 6px;
-    }
-    .btn-secondary:hover:not(:disabled) { background: var(--border); }
-    .btn:disabled { opacity: 0.42; cursor: not-allowed; }
+/* Dual-thumb трек */
+.range-wrap {
+  position: relative;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  margin-bottom: 4px;
+  touch-action: none;
+}
+.range-track {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+}
+.range-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  transition: left 0.05s, width 0.05s;
+}
+.range-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2.5px solid var(--bg);
+  box-shadow: 0 0 0 1.5px var(--accent);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  z-index: 3;
+  touch-action: none;
+  transition: transform 0.1s, box-shadow 0.1s, left 0.05s;
+}
+.range-thumb:hover {
+  transform: translate(-50%, -50%) scale(1.18);
+  box-shadow: 0 0 0 4px var(--accent-dim);
+}
+.range-thumb:active { cursor: grabbing; }
+.range-thumb.dragging {
+  transform: translate(-50%, -50%) scale(1.28);
+  box-shadow: 0 0 0 6px var(--accent-dim);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.range-thumb:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent);
+}
+.range-thumb.disabled { cursor: not-allowed; opacity: 0.4; pointer-events: none; }
 
-    /* ── Управление (Пауза / Стоп) ───────────────────────────────────────── */
-    .controls {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      padding: 0 14px 10px;
-    }
-    .btn-ctrl {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      padding: 7px 8px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--panel);
-      color: var(--text);
-      cursor: pointer;
-      font-size: 12px;
-      font-family: inherit;
-      font-weight: 500;
-      transition: background 0.12s, opacity 0.12s;
-    }
-    .btn-ctrl:hover:not(:disabled) { background: var(--border); }
-    .btn-ctrl.danger {
-      background: var(--danger);
-      border-color: var(--danger);
-      color: #fff;
-    }
-    .btn-ctrl.danger:hover:not(:disabled) {
-      background: var(--danger-hover);
-      border-color: var(--danger-hover);
-    }
-    .btn-ctrl:disabled { opacity: 0.38; cursor: not-allowed; }
+.range-hints {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 7px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.range-hints strong { color: var(--text); font-weight: 600; }
 
-    /* ── Прогресс ────────────────────────────────────────────────────────── */
-    .progress-section { padding: 0 14px 10px; }
+/* ── Разделитель ─────────────────────────────────────────────────────── */
+.sep { height: 1px; background: var(--border); }
 
-    .progress-track {
-      height: 5px;
-      background: var(--border);
-      border-radius: 3px;
-      overflow: hidden;
-      margin-bottom: 7px;
-    }
-    .progress-bar {
-      height: 100%;
-      width: 0%;
-      background: var(--accent);
-      border-radius: 3px;
-      transition: width 0.35s ease;
-      position: relative;
-      overflow: hidden;
-    }
-    .progress-bar.active::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
-      animation: shimmer 1.4s linear infinite;
-    }
-    @keyframes shimmer {
-      from { transform: translateX(-100%); }
-      to   { transform: translateX(210%); }
-    }
+/* ── Кнопки действий ─────────────────────────────────────────────────── */
+.actions { padding: 12px 14px 8px; }
 
-    .progress-meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-    }
-    .progress-status {
-      font-size: 11px;
-      color: var(--text);
-      line-height: 1.45;
-      flex: 1;
-    }
-    .progress-pct {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--accent);
-      flex-shrink: 0;
-      margin-left: 6px;
-      font-variant-numeric: tabular-nums;
-    }
-    .progress-eta {
-      font-size: 10px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1;
+  transition: background 0.13s, border-color 0.13s, opacity 0.13s;
+}
 
-    /* ── Итоговая карточка (появляется после DONE) ───────────────────────── */
-    .summary-card {
-      display: none;
-      margin: 0 14px 10px;
-      padding: 10px 12px;
-      background: var(--success-bg);
-      border: 1px solid var();
-      border-radius: var(--radius-md);
-      font-size: 12px;
-    }
-    .summary-card.visible { display: block; }
-    .summary-title {
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 6px;
-      font-size: 12px;
-    }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4px 8px;
-    }
-    .summary-item { color: var(--text-muted); font-size: 11px; }
-    .summary-item strong { color: var(--text); font-weight: 600; }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
 
-    /* ── Toast-уведомление ───────────────────────────────────────────────── */
-    .toast {
-      position: absolute;
-      bottom: 42px;
-      left: 14px;
-      right: 14px;
-      padding: 8px 12px;
-      border-radius: var(--radius-sm);
-      background: #222;
-      color: #fff;
-      font-size: 11px;
-      font-weight: 500;
-      opacity: 0;
-      transform: translateY(6px);
-      transition: opacity 0.2s, transform 0.2s;
-      pointer-events: none;
-      z-index: 10;
-    }
-    html.dark .toast { background: #eee; color: #111; }
-    .toast.show { opacity: 1; transform: translateY(0); }
+.btn-secondary {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 12px;
+  margin-top: 4px;
+  padding: 6px 12px;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
+}
+.btn-secondary:hover:not(:disabled) {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+  background: transparent;
+}
 
-    /* ── Подвал ─────────────────────────────────────────────────────────── */
-    .footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 6px 14px 8px;
-      border-top: 1px solid var(--border);
-    }
-    .footer-brand {
-      font-size: 10px;
-      color: var(--text-muted);
-      font-weight: 600;
-      letter-spacing: 0.5px;
-    }
-    .footer-keys {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
-    .kbd {
-      display: inline-block;
-      font-size: 9px;
-      padding: 1px 4px;
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      background: var(--panel);
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-    .footer-key-hint { font-size: 9px; color: var(--text-muted); }
+.btn:disabled { opacity: 0.42; cursor: not-allowed; }
 
-    /* ── Spinner ─────────────────────────────────────────────────────────── */
-    .spinner {
-      width: 11px;
-      height: 11px;
-      border: 2px solid rgba(255,255,255,0.35);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.65s linear infinite;
-      flex-shrink: 0;
-      display: none;
-    }
-    .btn-primary.searching .spinner { display: block; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+/* ── Управление (Пауза / Стоп) ───────────────────────────────────────── */
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 14px 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+  padding-top: 8px;
+}
+
+.btn-ctrl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  transition: background 0.12s, opacity 0.12s;
+}
+.btn-ctrl:hover:not(:disabled) { background: var(--border); }
+.btn-ctrl.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.btn-ctrl.danger:hover:not(:disabled) {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+.btn-ctrl:disabled { opacity: 0.38; cursor: not-allowed; }
+
+/* ── Прогресс ────────────────────────────────────────────────────────── */
+.progress-section { padding: 0 14px 12px; }
+
+.progress-track {
+  height: 6px;          /* FIX [UI]: было 5px */
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.35s ease;
+  position: relative;
+  overflow: hidden;
+}
+.progress-bar.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(210%); }
+}
+
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+/* FIX [Medium]: min-height вместо &nbsp; как layout-костыля            */
+.progress-status {
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.45;
+  flex: 1;
+  min-height: 1.45em;
+}
+.progress-pct {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.progress-eta {
+  font-size: 11px;   /* FIX [UI]: было 10px — нечитаемо */
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Итоговая карточка (появляется после DONE) ───────────────────────── */
+.summary-card {
+  display: none;
+  margin: 0 14px 12px;
+  padding: 10px 12px;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);   /* ← КРИТИЧЕСКИЙ БАГ исправлен */
+  border-radius: var(--radius-md);
+  font-size: 12px;
+}
+.summary-card.visible { display: block; }
+.summary-title {
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+.summary-item { color: var(--text-muted); font-size: 11px; }
+.summary-item strong { color: var(--text); font-weight: 600; }
+
+/* ── Toast-уведомление ───────────────────────────────────────────────── */
+.toast {
+  position: absolute;
+  bottom: 42px;
+  left: 14px;
+  right: 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: #222;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  z-index: 10;
+}
+html.dark .toast { background: #eee; color: #111; }
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* ── Подвал ─────────────────────────────────────────────────────────── */
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+.footer-brand {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.footer-keys {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.kbd {
+  display: inline-block;
+  font-size: 10px;   /* FIX [UI]: было 9px */
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.footer-key-hint {
+  font-size: 11px;   /* FIX [UI]: было 9px */
+  color: var(--text-muted);
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────── */
+.spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  flex-shrink: 0;
+  display: none;
+}
+.btn-primary.searching .spinner { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
 </head>
 <body>
 
-  <!-- Шапка -->
-  <div class="header">
-    <span class="header-title">YARchive Downloader</span>
-    <button class="header-gear" id="openOptions" title="Настройки (Alt+S)" aria-label="Открыть настройки">⚙️</button>
+<!-- Шапка -->
+<div class="header">
+  <span class="header-title">YARchive Downloader</span>
+  <button class="header-gear" id="openOptions" title="Настройки (Alt+S)" aria-label="Открыть настройки">⚙️</button>
+</div>
+
+<!-- Баннер: не на странице архива -->
+<div class="banner" id="bannerNotArchive" role="alert">
+  <span class="banner-icon">⚠️</span>
+  <span class="banner-text">
+    Откройте документ на
+    <!-- FIX [High]: добавлен rel="noopener noreferrer" -->
+    <a href="https://af.yar-archives.ru" target="_blank" rel="noopener noreferrer">af.yar-archives.ru</a>
+  </span>
+</div>
+
+<!-- Слайдер диапазона страниц -->
+<div class="range-section">
+  <div class="range-row">
+    <span class="range-label">Диапазон страниц</span>
   </div>
-
-  <!-- Баннер: не на странице архива -->
-  <div class="banner" id="bannerNotArchive" role="alert">
-    <span class="banner-icon">⚠️</span>
-    <span class="banner-text">
-      Откройте документ на
-      <a href="https://af.yar-archives.ru" target="_blank">af.yar-archives.ru</a>
-    </span>
-  </div>
-
-  <!-- Слайдер диапазона страниц -->
-  <div class="range-section">
-    <div class="range-row">
-      <span class="range-label">Диапазон страниц</span>
-    </div>
-
-    <div class="range-wrap" id="rangeWrap" aria-label="Выбор диапазона страниц">
-      <div class="range-track" id="rangeTrack">
-        <div class="range-fill" id="rangeFill"></div>
-        <div class="range-thumb" id="thumbStart"
-             role="slider" tabindex="0"
-             aria-label="Начальная страница"
-             aria-valuemin="1" aria-valuemax="5000" aria-valuenow="1"></div>
-        <div class="range-thumb" id="thumbEnd"
-             role="slider" tabindex="0"
-             aria-label="Конечная страница"
-             aria-valuemin="1" aria-valuemax="5000" aria-valuenow="5000"></div>
-      </div>
-    </div>
-
-    <div class="range-hints">
-      <span>стр. <strong id="hintFrom">1</strong></span>
-      <span id="hintToWrap">до <strong id="hintTo">конца</strong></span>
-    </div>
-  </div>
-
-  <div class="sep"></div>
-
-  <!-- Кнопки -->
-  <div class="actions">
-    <button id="btnAll" class="btn btn-primary">
-      <span class="spinner" aria-hidden="true"></span>
-      <span id="btnAllText">Скачать документ</span>
-    </button>
-    <button id="btnCurrent" class="btn btn-secondary">
-      Скачать текущую страницу
-    </button>
-  </div>
-
-  <!-- Пауза / Стоп -->
-  <div class="controls">
-    <button id="btnPause" class="btn-ctrl" title="Пауза / Продолжить (Пробел)" disabled aria-label="Пауза">
-      <span id="pauseIcon" aria-hidden="true">⏸</span>
-      <span id="pauseLabel">Пауза</span>
-    </button>
-    <button id="btnStop" class="btn-ctrl danger" title="Остановить (Escape)" disabled aria-label="Остановить">
-      ⏹ Стоп
-    </button>
-  </div>
-
-  <!-- Прогресс -->
-  <div class="progress-section" role="status" aria-live="polite">
-    <div class="progress-track"
-         role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-         id="progressRole">
-      <div id="progressBar" class="progress-bar"></div>
-    </div>
-    <div class="progress-meta">
-      <span id="status" class="progress-status">   </span>
-      <span id="progressPct" class="progress-pct"></span>
-    </div>
-    <div id="progressEta" class="progress-eta"></div>
-  </div>
-
-  <!-- Итоговая карточка -->
-  <div class="summary-card" id="summaryCard" role="region" aria-label="Результат загрузки">
-    <div class="summary-title" id="summaryTitle">Загрузка завершена</div>
-    <div class="summary-grid" id="summaryGrid"></div>
-  </div>
-
-  <!-- Toast -->
-  <div class="toast" id="toast" role="status" aria-live="assertive"></div>
-
-  <!-- Подвал -->
-  <div class="footer">
-    <span class="footer-brand">v2.0.4</span>
-    <div class="footer-keys">
-      <kbd class="kbd">Пробел</kbd><span class="footer-key-hint">пауза</span>
-      <kbd class="kbd">Esc</kbd><span class="footer-key-hint">стоп</span>
+  <div class="range-wrap" id="rangeWrap" aria-label="Выбор диапазона страниц">
+    <div class="range-track" id="rangeTrack">
+      <div class="range-fill" id="rangeFill"></div>
+      <!--
+        FIX [High]: aria-valuemax="5000" — hardcoded, должен обновляться
+        из popup.js после обнаружения реального totalPages:
+          thumbStart.setAttribute('aria-valuemax', totalPages);
+          thumbEnd.setAttribute('aria-valuemax', totalPages);
+      -->
+      <div class="range-thumb" id="thumbStart"
+           role="slider" tabindex="0"
+           aria-label="Начальная страница"
+           aria-valuemin="1" aria-valuemax="5000" aria-valuenow="1"></div>
+      <div class="range-thumb" id="thumbEnd"
+           role="slider" tabindex="0"
+           aria-label="Конечная страница"
+           aria-valuemin="1" aria-valuemax="5000" aria-valuenow="5000"></div>
     </div>
   </div>
+  <div class="range-hints">
+    <span>стр. <strong id="hintFrom">1</strong></span>
+    <span id="hintToWrap">до <strong id="hintTo">конца</strong></span>
+  </div>
+</div>
 
-  <script src="popup.js"></script>
+<div class="sep"></div>
+
+<!-- Кнопки -->
+<div class="actions">
+  <button id="btnAll" class="btn btn-primary">
+    <span class="spinner" aria-hidden="true"></span>
+    <span id="btnAllText">Скачать документ</span>
+  </button>
+  <!-- FIX [UI]: downgrade до text-link — убрана конкуренция с главным CTA -->
+  <button id="btnCurrent" class="btn btn-secondary">
+    Скачать текущую страницу
+  </button>
+</div>
+
+<!-- Пауза / Стоп -->
+<!-- FIX [UI]: визуально отделён от кнопок через border-top (в CSS выше) -->
+<div class="controls">
+  <button id="btnPause" class="btn-ctrl" title="Пауза / Продолжить (Пробел)" disabled aria-label="Пауза">
+    <span id="pauseIcon" aria-hidden="true">⏸</span>
+    <span id="pauseLabel">Пауза</span>
+  </button>
+  <button id="btnStop" class="btn-ctrl danger" title="Остановить (Escape)" disabled aria-label="Остановить">
+    ⏹ Стоп
+  </button>
+</div>
+
+<!-- Прогресс -->
+<div class="progress-section" role="status" aria-live="polite">
+  <div class="progress-track"
+       role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+       id="progressRole">
+    <div id="progressBar" class="progress-bar"></div>
+  </div>
+  <div class="progress-meta">
+    <!-- FIX [Medium]: убраны &nbsp; — вместо них min-height в CSS -->
+    <span id="status" class="progress-status"></span>
+    <span id="progressPct" class="progress-pct"></span>
+  </div>
+  <div id="progressEta" class="progress-eta"></div>
+</div>
+
+<!-- Итоговая карточка -->
+<!-- FIX [Critical]: border теперь использует var(--success-border) -->
+<div class="summary-card" id="summaryCard" role="region" aria-label="Результат загрузки">
+  <div class="summary-title" id="summaryTitle">Загрузка завершена</div>
+  <div class="summary-grid" id="summaryGrid"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="status" aria-live="assertive"></div>
+
+<!-- Подвал -->
+<div class="footer">
+  <span class="footer-brand">v2.0.5</span>
+  <div class="footer-keys">
+    <kbd class="kbd">Пробел</kbd><span class="footer-key-hint">пауза</span>
+    <kbd class="kbd">Esc</kbd><span class="footer-key-hint">стоп</span>
+  </div>
+</div>
+
+<script src="popup.js"></script>
 </body>
 </html>
