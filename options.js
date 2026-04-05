@@ -25,7 +25,6 @@ function applyTheme(theme) {
   $('themeLightBtn').setAttribute('aria-checked', String(theme === 'light'));
   $('themeDarkBtn').classList.toggle('active', theme === 'dark');
   $('themeDarkBtn').setAttribute('aria-checked', String(theme === 'dark'));
-  // radio-инпуты удалены из HTML — тема читается через data-theme активной кнопки
 }
 
 $('themeLightBtn').addEventListener('click', () => applyTheme('light'));
@@ -78,6 +77,19 @@ document.querySelectorAll('.preset').forEach(btn => {
     input.dispatchEvent(new Event('change')); 
   });
 });
+
+// ── Аккордеон «Доступные архивы» ─────────────────────────────────────────────
+
+const archivesToggle = $('archivesToggle');
+const archivesList   = $('archivesList');
+
+if (archivesToggle && archivesList) {
+  archivesToggle.addEventListener('click', () => {
+    const isOpen = archivesList.classList.toggle('visible');
+    archivesToggle.classList.toggle('open', isOpen);
+    archivesToggle.setAttribute('aria-expanded', String(isOpen));
+  });
+}
 
 // ── Загрузка настроек ─────────────────────────────────────────────────────────
 

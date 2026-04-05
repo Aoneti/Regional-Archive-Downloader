@@ -64,7 +64,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;    /* FIX [UI]: выровнено по spacing-scale 4/8/12/16 */
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
@@ -103,11 +103,9 @@ body {
 }
 .banner-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 .banner-text { font-size: 12px; color: var(--warn-text); line-height: 1.5; }
-/* FIX [High]: добавлен rel="noopener noreferrer" — в HTML ниже         */
-.banner-text a { color: var(--warn-text); font-weight: 600; }
+.banner-text a { color: var(--warn-text); font-weight: 600; text-decoration: underline; }
 
 /* ── Секция диапазона ────────────────────────────────────────────────── */
-/* FIX [UI]: отступы приведены к spacing-scale                          */
 .range-section {
   padding: 12px 14px 8px;
 }
@@ -293,7 +291,7 @@ body {
 .progress-section { padding: 0 14px 12px; }
 
 .progress-track {
-  height: 6px;          /* FIX [UI]: было 5px */
+  height: 6px;
   background: var(--border);
   border-radius: 3px;
   overflow: hidden;
@@ -325,7 +323,6 @@ body {
   justify-content: space-between;
   align-items: flex-start;
 }
-/* FIX [Medium]: min-height вместо &nbsp; как layout-костыля            */
 .progress-status {
   font-size: 11px;
   color: var(--text);
@@ -342,18 +339,18 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .progress-eta {
-  font-size: 11px;   /* FIX [UI]: было 10px — нечитаемо */
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
 }
 
-/* ── Итоговая карточка (появляется после DONE) ───────────────────────── */
+/* ── Итоговая карточка ───────────────────────────────────────────────── */
 .summary-card {
   display: none;
   margin: 0 14px 12px;
   padding: 10px 12px;
   background: var(--success-bg);
-  border: 1px solid var(--success-border);   /* ← КРИТИЧЕСКИЙ БАГ исправлен */
+  border: 1px solid var(--success-border);
   border-radius: var(--radius-md);
   font-size: 12px;
 }
@@ -414,7 +411,7 @@ html.dark .toast { background: #eee; color: #111; }
 }
 .kbd {
   display: inline-block;
-  font-size: 10px;   /* FIX [UI]: было 9px */
+  font-size: 10px;
   padding: 1px 4px;
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -423,7 +420,7 @@ html.dark .toast { background: #eee; color: #111; }
   line-height: 1.5;
 }
 .footer-key-hint {
-  font-size: 11px;   /* FIX [UI]: было 9px */
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -450,13 +447,12 @@ html.dark .toast { background: #eee; color: #111; }
   <button class="header-gear" id="openOptions" title="Настройки (Alt+S)" aria-label="Открыть настройки">⚙️</button>
 </div>
 
-<!-- Баннер: не на странице архива -->
+<!-- Баннер: не на странице поддерживаемого архива -->
 <div class="banner" id="bannerNotArchive" role="alert">
   <span class="banner-icon">⚠️</span>
   <span class="banner-text">
-    Откройте документ на
-    <!-- FIX [High]: добавлен rel="noopener noreferrer" -->
-    <a href="https://af.yar-archives.ru" target="_blank" rel="noopener noreferrer">af.yar-archives.ru</a>
+    Откройте документ на сайте
+    <a href="#" id="bannerArchivesLink">поддерживаемого архива</a>
   </span>
 </div>
 
@@ -468,12 +464,6 @@ html.dark .toast { background: #eee; color: #111; }
   <div class="range-wrap" id="rangeWrap" aria-label="Выбор диапазона страниц">
     <div class="range-track" id="rangeTrack">
       <div class="range-fill" id="rangeFill"></div>
-      <!--
-        FIX [High]: aria-valuemax="5000" — hardcoded, должен обновляться
-        из popup.js после обнаружения реального totalPages:
-          thumbStart.setAttribute('aria-valuemax', totalPages);
-          thumbEnd.setAttribute('aria-valuemax', totalPages);
-      -->
       <div class="range-thumb" id="thumbStart"
            role="slider" tabindex="0"
            aria-label="Начальная страница"
@@ -498,14 +488,12 @@ html.dark .toast { background: #eee; color: #111; }
     <span class="spinner" aria-hidden="true"></span>
     <span id="btnAllText">Скачать документ</span>
   </button>
-  <!-- FIX [UI]: downgrade до text-link — убрана конкуренция с главным CTA -->
   <button id="btnCurrent" class="btn btn-secondary">
     Скачать текущую страницу
   </button>
 </div>
 
 <!-- Пауза / Стоп -->
-<!-- FIX [UI]: визуально отделён от кнопок через border-top (в CSS выше) -->
 <div class="controls">
   <button id="btnPause" class="btn-ctrl" title="Пауза / Продолжить (Пробел)" disabled aria-label="Пауза">
     <span id="pauseIcon" aria-hidden="true">⏸</span>
@@ -524,7 +512,6 @@ html.dark .toast { background: #eee; color: #111; }
     <div id="progressBar" class="progress-bar"></div>
   </div>
   <div class="progress-meta">
-    <!-- FIX [Medium]: убраны &nbsp; — вместо них min-height в CSS -->
     <span id="status" class="progress-status"></span>
     <span id="progressPct" class="progress-pct"></span>
   </div>
@@ -532,7 +519,6 @@ html.dark .toast { background: #eee; color: #111; }
 </div>
 
 <!-- Итоговая карточка -->
-<!-- FIX [Critical]: border теперь использует var(--success-border) -->
 <div class="summary-card" id="summaryCard" role="region" aria-label="Результат загрузки">
   <div class="summary-title" id="summaryTitle">Загрузка завершена</div>
   <div class="summary-grid" id="summaryGrid"></div>
@@ -543,7 +529,7 @@ html.dark .toast { background: #eee; color: #111; }
 
 <!-- Подвал -->
 <div class="footer">
-  <span class="footer-brand">v2.1.0</span>
+  <span class="footer-brand">v2.1.1</span>
   <div class="footer-keys">
     <kbd class="kbd">Пробел</kbd><span class="footer-key-hint">пауза</span>
     <kbd class="kbd">Esc</kbd><span class="footer-key-hint">стоп</span>

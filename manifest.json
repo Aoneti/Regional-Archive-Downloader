@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YARchive Downloader",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Скачивание документов из региональных архивов России",
 
   "permissions": [
@@ -13,7 +13,9 @@
   "host_permissions": [
     "https://af.yar-archives.ru/*",
     "https://gosarchive.gov35.ru/*",
-    "https://archives.permkrai.ru/*"
+    "https://archives.permkrai.ru/*",
+    "https://archivesaratov.ru/*",
+    "https://www.archivesaratov.ru/*"
   ],
 
   "content_security_policy": {
@@ -46,7 +48,9 @@
       "matches": [
         "https://af.yar-archives.ru/*",
         "https://gosarchive.gov35.ru/*",
-        "https://archives.permkrai.ru/*"
+        "https://archives.permkrai.ru/*",
+        "https://archivesaratov.ru/*",
+        "https://www.archivesaratov.ru/*"
       ],
       "js": [
         "content-script.js"

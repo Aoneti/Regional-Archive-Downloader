@@ -343,6 +343,15 @@ btnStop.addEventListener('click', () => {
 
 openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
+// Ссылка «поддерживаемых архивов» в баннере → открывает настройки
+const bannerArchivesLink = document.getElementById('bannerArchivesLink');
+if (bannerArchivesLink) {
+  bannerArchivesLink.addEventListener('click', e => {
+    e.preventDefault();
+    chrome.runtime.openOptionsPage();
+  });
+}
+
 // ── Клавиатурные сокращения ───────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
