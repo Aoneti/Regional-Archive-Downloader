@@ -22,7 +22,7 @@ const rangeTrack       = document.getElementById('rangeTrack');
 const rangeFill        = document.getElementById('rangeFill');
 const thumbStart       = document.getElementById('thumbStart');
 const thumbEnd         = document.getElementById('thumbEnd');
-const rangeDisplay     = document.getElementById('rangeDisplay');
+const rangeDisplay     = document.getElementById('rangeDisplay'); // может быть null
 const hintFrom         = document.getElementById('hintFrom');
 const hintToWrap       = document.getElementById('hintToWrap');
 
@@ -30,7 +30,7 @@ const hintToWrap       = document.getElementById('hintToWrap');
 
 let isRunning      = false;
 let isPaused       = false;
-let isArchivePage  = false;  
+let isArchivePage  = false;
 
 let rangeMax  = 1500;
 const RANGE_MIN = 1;
@@ -48,7 +48,7 @@ let lastStatusText     = '';
 let toastTimer = null;
 
 function showToast(text, durationMs = 2800) {
-  if (toastTimer) { clearTimeout(toastTimer); }
+  if (toastTimer) clearTimeout(toastTimer);
   toastEl.textContent = text;
   toastEl.classList.add('show');
   toastTimer = setTimeout(() => {
@@ -59,29 +59,21 @@ function showToast(text, durationMs = 2800) {
 
 // ── Итоговая карточка ─────────────────────────────────────────────────────────
 
-function showSummary(kind, message) {
-  const elapsed = downloadStartTime
-    ? Math.round((Date.now() - downloadStartTime) / 1000)
-    : 0;
-
+function showSummary(kind, message, extra = {}) {
+  const elapsed   = downloadStartTime ? Math.round((Date.now() - downloadStartTime) / 1000) : 0;
   const isStopped = kind === 'stopped';
   const isError   = kind === 'error';
 
-  summaryTitle.textContent = isError ? 'Ошибка загрузки'
-    : isStopped ? 'Загрузка остановлена'
-    : 'Загрузка завершена';
+  summaryTitle.textContent = isError    ? 'Ошибка загрузки'
+    : isStopped                         ? 'Загрузка остановлена'
+    :                                     'Загрузка завершена';
 
   const items = [];
-
-  if (downloadedPages > 0) {
-    items.push(['Загружено', `${downloadedPages} стр.`]);
-  }
-  if (totalPages > 0 && downloadedPages < totalPages) {
-    items.push(['Всего найдено', `${totalPages} стр.`]);
-  }
+  if (downloadedPages > 0)                            items.push(['Загружено',     `${downloadedPages} стр.`]);
+  if (totalPages > 0 && downloadedPages < totalPages) items.push(['Всего найдено', `${totalPages} стр.`]);
+  if (extra.failedCount > 0)                          items.push(['Пропущено',     `${extra.failedCount} стр.`]);
   if (elapsed >= 3) {
-    const min = Math.floor(elapsed / 60);
-    const sec = elapsed % 60;
+    const min = Math.floor(elapsed / 60), sec = elapsed % 60;
     items.push(['Время', min > 0 ? `${min} мин ${sec} сек` : `${sec} сек`]);
   }
   if (elapsed >= 5 && downloadedPages > 1) {
@@ -141,9 +133,12 @@ function updateRangeUI() {
     ? `до <strong>конца</strong>`
     : `до стр. <strong>${hi}</strong>`;
 
-  rangeDisplay.textContent = lo === RANGE_MIN && isAutoEnd
-    ? '1 — до конца'
-    : isAutoEnd ? `${lo} — до конца` : `${lo} — ${hi}`;
+  // rangeDisplay может отсутствовать в разметке — защита от null
+  if (rangeDisplay) {
+    rangeDisplay.textContent = lo === RANGE_MIN && isAutoEnd
+      ? '1 — до конца'
+      : isAutoEnd ? `${lo} — до конца` : `${lo} — ${hi}`;
+  }
 
   thumbStart.setAttribute('aria-valuenow', lo);
   thumbStart.setAttribute('aria-valuemax', hi - 1);
@@ -182,9 +177,9 @@ function bindThumb(thumb, which) {
   // Клавиатурное управление
   thumb.addEventListener('keydown', e => {
     if (isRunning || !isArchivePage) return;
-    const step   = e.shiftKey ? 10 : 1;
-    const isLeft = e.key === 'ArrowLeft';
-    const isRight= e.key === 'ArrowRight';
+    const step    = e.shiftKey ? 10 : 1;
+    const isLeft  = e.key === 'ArrowLeft';
+    const isRight = e.key === 'ArrowRight';
     if (!isLeft && !isRight) return;
     e.preventDefault();
 
@@ -209,7 +204,9 @@ rangeTrack.addEventListener('dblclick', () => {
   fromPage = 1;
   toPage   = null;
   updateRangeUI();
-  showToast('Диапазон сброшен', 1400);
+  // Сбрасываем сохранённый прогресс возобновления вместе с диапазоном
+  sendToActiveTab({ type: 'CLEAR_RESUME' });
+  showToast('Диапазон и прогресс сброшены', 1600);
 });
 
 // ── ETA ───────────────────────────────────────────────────────────────────────
@@ -271,7 +268,7 @@ function setRunningUI(running, paused) {
   thumbEnd.classList.toggle('disabled',   running);
 
   if (!running) {
-    downloadStartTime = null;
+    downloadStartTime       = null;
     progressEta.textContent = '';
     progressPct.textContent = '';
     btnAllText.textContent  = 'Скачать документ';
@@ -384,23 +381,32 @@ chrome.runtime.onMessage.addListener(msg => {
       break;
 
     case 'DONE': {
-      const text = msg.text || 'Готово';
+      const text      = msg.text || 'Готово';
       const isStopped = text.startsWith('Остановлено');
       const isError   = text.startsWith('Ошибка');
 
       setStatus(text);
-      setProgress(isStopped ? (downloadedPages / (totalPages || 1) * 100) : 100,
-                  downloadedPages, totalPages);
+      setProgress(
+        isStopped ? (downloadedPages / (totalPages || 1) * 100) : 100,
+        downloadedPages, totalPages
+      );
       setRunningUI(false, false);
-      
+
       if (downloadedPages > 0) {
-        showSummary(isStopped ? 'stopped' : isError ? 'error' : 'done', text);
+        showSummary(
+          isStopped ? 'stopped' : isError ? 'error' : 'done',
+          text,
+          { failedCount: msg.failedCount ?? 0 }
+        );
       }
 
-      // Toast
-      const toastMsg = isError   ? `Ошибка: ${text.replace('Ошибка: ', '')}`
-                     : isStopped ? `Остановлено • ${downloadedPages} стр. скачано`
-                     : `Готово — ${text.replace('Готово: ', '')}`;
+      const toastMsg = isError
+        ? `Ошибка: ${text.replace('Ошибка: ', '')}`
+        : isStopped
+          ? `Остановлено • ${downloadedPages} стр. скачано`
+          : msg.failedCount > 0
+            ? `Готово — ${text.replace('Готово: ', '')} • пропущено: ${msg.failedCount}`
+            : `Готово — ${text.replace('Готово: ', '')}`;
       showToast(toastMsg, isError ? 3500 : 2500);
       break;
     }
@@ -435,24 +441,31 @@ chrome.runtime.onMessage.addListener(msg => {
   });
 
   sendToActiveTab({ type: 'GET_STATE' }, state => {
-    if (chrome.runtime.lastError) {
-      setArchivePage(false);
-      return;
-    }
-    if (!state) {
-      setArchivePage(false);
-      return;
-    }
+    if (chrome.runtime.lastError) { setArchivePage(false); return; }
+    if (!state)                   { setArchivePage(false); return; }
 
     setArchivePage(!!state.isArchivePage);
 
-    if (state.currentPage && state.currentPage > 1) {
+    // ── Восстанавливаем прерванную загрузку ──────────────────────────────
+    if (state.resumeState && !state.isRunning && state.isArchivePage) {
+      const rs     = state.resumeState;
+      const ageMin = Math.round((Date.now() - (rs.savedAt ?? 0)) / 60000);
+
+      // Сдвигаем левый ползунок на следующую после прерванной страницу
+      const resumePage = rs.lastPage + 1;
+      if (resumePage > 1 && resumePage <= rangeMax) {
+        fromPage = resumePage;
+        updateRangeUI();
+      }
+
+      setStatus(`↩ Прервано на стр. ${rs.lastPage} из ${rs.totalPages} (${ageMin} мин. назад) — двойной клик по слайдеру для сброса`);
+    } else if (state.currentPage && state.currentPage > 1) {
       fromPage = state.currentPage;
       updateRangeUI();
     }
 
     if (state.isRunning) {
-      downloadStartTime = Date.now();
+      downloadStartTime      = Date.now();
       setRunningUI(true, state.isPaused);
       setStatus(state.isPaused ? 'Пауза' : 'Загрузка…');
       btnAllText.textContent = 'Загрузка…';
