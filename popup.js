@@ -1,3 +1,5 @@
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+
 const btnAll           = document.getElementById('btnAll');
 const btnAllText       = document.getElementById('btnAllText');
 const btnCurrent       = document.getElementById('btnCurrent');
@@ -29,7 +31,24 @@ const historyList      = document.getElementById('historyList');
 const historyCount     = document.getElementById('historyCount');
 const historyEmpty     = document.getElementById('historyEmpty');
 
-// ── Состояние ──
+// Заметки
+const notesSection = document.getElementById('notesSection');
+const notesToggle  = document.getElementById('notesToggle');
+const notesBody    = document.getElementById('notesBody');
+const notesArea    = document.getElementById('notesArea');
+const notesSaved   = document.getElementById('notesSaved');
+const notesChars   = document.getElementById('notesChars');
+const notesDot     = document.getElementById('notesDot');
+
+// Экспорт
+const exportSection = document.getElementById('exportSection');
+const exportToggle  = document.getElementById('exportToggle');
+const exportBody    = document.getElementById('exportBody');
+const exportCSV     = document.getElementById('exportCSV');
+const exportJSON    = document.getElementById('exportJSON');
+const exportBibTeX  = document.getElementById('exportBibTeX');
+
+// ── Состояние ─────────────────────────────────────────────────────────────────
 
 let isRunning     = false;
 let isPaused      = false;
@@ -46,7 +65,10 @@ let downloadStartTime = null;
 let downloadedPages   = 0;
 let totalPages        = 0;
 
-// ── Тема ──
+/** Unit ID текущего документа; заполняется в init() из GET_STATE */
+let currentUnit = null;
+
+// ── Тема ──────────────────────────────────────────────────────────────────────
 
 const mq = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -62,7 +84,7 @@ mq.addEventListener('change', () => {
   chrome.storage.sync.get({ theme: 'auto' }, items => applyTheme(items.theme));
 });
 
-// ── Toast ──
+// ── Toast ─────────────────────────────────────────────────────────────────────
 
 let toastTimer = null;
 
@@ -76,7 +98,7 @@ function showToast(text, durationMs = 2800) {
   }, durationMs);
 }
 
-// ── Итоговая карточка ──
+// ── Итоговая карточка ─────────────────────────────────────────────────────────
 
 function showSummary(kind, extra = {}) {
   const elapsed   = downloadStartTime ? Math.round((Date.now() - downloadStartTime) / 1000) : 0;
@@ -99,9 +121,8 @@ function showSummary(kind, extra = {}) {
     const min = Math.floor(elapsed / 60), sec = elapsed % 60;
     items.push(['Время', min > 0 ? `${min} мин ${sec} сек` : `${sec} сек`]);
   }
-  if (elapsed >= 5 && downloadedPages > 1) {
+  if (elapsed >= 5 && downloadedPages > 1)
     items.push(['Скорость', `${Math.round(downloadedPages / elapsed * 60)} стр/мин`]);
-  }
   if (isPDF) items.push(['Формат', 'PDF-файл']);
 
   summaryGrid.innerHTML = items
@@ -111,11 +132,9 @@ function showSummary(kind, extra = {}) {
   summaryCard.classList.add('visible');
 }
 
-function hideSummary() {
-  summaryCard.classList.remove('visible');
-}
+function hideSummary() { summaryCard.classList.remove('visible'); }
 
-// ── Баннер «не та страница» ──
+// ── Баннер ────────────────────────────────────────────────────────────────────
 
 function setArchivePage(isArchive) {
   isArchivePage = isArchive;
@@ -124,9 +143,15 @@ function setArchivePage(isArchive) {
   btnAll.disabled     = !isArchive || isRunning;
   btnCurrent.disabled = !isArchive || isRunning;
   btnPDF.disabled     = !isArchive || isRunning;
+
+  // Экспорт и заметки доступны только на странице архива
+  exportCSV.disabled    = !isArchive;
+  exportJSON.disabled   = !isArchive;
+  exportBibTeX.disabled = !isArchive;
+  notesArea.disabled    = !isArchive;
 }
 
-// ── Dual-thumb range slider ──
+// ── Dual-thumb range slider ───────────────────────────────────────────────────
 
 function xToPage(clientX) {
   const rect  = rangeTrack.getBoundingClientRect();
@@ -148,7 +173,6 @@ function updateRangeUI() {
   rangeFill.style.width = ((hi - lo) / (rangeMax - RANGE_MIN) * 100).toFixed(2) + '%';
 
   hintFrom.textContent = lo;
-
   const isAutoEnd = (toPage === null || hi >= rangeMax);
   hintToWrap.innerHTML = isAutoEnd
     ? `до <strong>конца</strong>`
@@ -218,7 +242,7 @@ rangeTrack.addEventListener('dblclick', () => {
   showToast('Диапазон и прогресс сброшены', 1600);
 });
 
-// ── ETA ──
+// ── ETA ───────────────────────────────────────────────────────────────────────
 
 function updateETA() {
   if (!downloadStartTime || totalPages <= 1 || downloadedPages < 2) {
@@ -237,7 +261,7 @@ function updateETA() {
   progressEta.textContent = `${etaText} • ${Math.round(speed * 60)} стр/мин`;
 }
 
-// ── Утилиты UI ──
+// ── Утилиты UI ────────────────────────────────────────────────────────────────
 
 function setStatus(text) { statusEl.textContent = text || ''; }
 
@@ -277,7 +301,7 @@ function setRunningUI(running, paused) {
   }
 }
 
-// ── Отправка в активный таб ──
+// ── Отправка в активный таб ───────────────────────────────────────────────────
 
 function sendToActiveTab(message, cb) {
   chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
@@ -286,7 +310,228 @@ function sendToActiveTab(message, cb) {
   });
 }
 
-// ── История загрузок ───
+// ── Заметки к делу ───────────────────────────────────────────────────────────
+
+const NOTES_MAX = 4000;
+
+/** Ключ для chrome.storage.local: yar_notes_{unit} */
+function notesKey(unit) { return `yar_notes_${unit}`; }
+
+let notesSaveTimer = null;
+let notesSavedTimer = null;
+
+/**
+ * Показывает индикатор «Сохранено» на 1.8 с, потом скрывает.
+ */
+function flashNotesSaved() {
+  notesSaved.classList.add('visible');
+  if (notesSavedTimer) clearTimeout(notesSavedTimer);
+  notesSavedTimer = setTimeout(() => notesSaved.classList.remove('visible'), 1800);
+}
+
+/**
+ * Сохраняет текст заметки в chrome.storage.local с дебаунсом 800 мс.
+ * Обновляет счётчик символов и индикатор точки немедленно.
+ */
+function onNotesInput() {
+  const text = notesArea.value;
+  notesChars.textContent = `${text.length} / ${NOTES_MAX}`;
+  notesDot.classList.toggle('visible', text.trim().length > 0);
+
+  if (notesSaveTimer) clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(() => {
+    if (!currentUnit) return;
+    chrome.storage.local.set({ [notesKey(currentUnit)]: text }, () => {
+      if (!chrome.runtime.lastError) flashNotesSaved();
+    });
+  }, 800);
+}
+
+/**
+ * Загружает заметку для unit и подставляет в textarea.
+ * Вызывается при инициализации попапа.
+ */
+function loadNotes(unit) {
+  if (!unit) return;
+  chrome.storage.local.get({ [notesKey(unit)]: '' }, data => {
+    const text = data[notesKey(unit)] || '';
+    notesArea.value = text;
+    notesChars.textContent = `${text.length} / ${NOTES_MAX}`;
+    notesDot.classList.toggle('visible', text.trim().length > 0);
+  });
+}
+
+notesArea.addEventListener('input', onNotesInput);
+
+// Аккордеон «Заметки»
+notesToggle.addEventListener('click', () => {
+  const isOpen = notesSection.classList.toggle('open');
+  notesToggle.setAttribute('aria-expanded', String(isOpen));
+  if (isOpen) notesArea.focus();
+});
+
+// ── Экспорт метаданных ────────────────────────────────────────────────────────
+
+/**
+ * Скачивает текстовый файл непосредственно из popup-контекста
+ * через временный <a download>. Не требует прохода через background.js.
+ */
+function downloadTextFile(filename, content, mimeType = 'text/plain') {
+  const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename; a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 10_000);
+}
+
+// ── Форматировщики ────────────────────────────────────────────────────────────
+
+/**
+ * CSV: строки «Поле,Значение» — совместимо с Excel и Google Sheets.
+ * Все значения экранируются двойными кавычками по RFC 4180.
+ */
+function formatCSV(data) {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+  const header  = [q('Поле'), q('Значение')];
+  const fixed   = [
+    ['Название',       data.title       ],
+    ['Архив',          data.archive     ],
+    ['Unit ID',        data.unitId      ],
+    ['URL',            data.url         ],
+    ['Текущая стр.',   data.currentPage ],
+    ['Дата доступа',   formatDateRu(data.accessedAt)],
+  ];
+  const fieldRows = Object.entries(data.fields || {});
+
+  const rows = [
+    header,
+    ...fixed.map(([k, v]) => [q(k), q(v)]),
+    ...(fieldRows.length ? [['', '']] : []),
+    ...fieldRows.map(([k, v]) => [q(k), q(v)])
+  ];
+
+  return rows.map(r => r.join(',')).join('\r\n');
+}
+
+/**
+ * JSON: полный объект с отступами, кодировка UTF-8.
+ */
+function formatJSON(data) {
+  return JSON.stringify(
+    {
+      unitId:      data.unitId,
+      title:       data.title,
+      archive:     data.archive,
+      url:         data.url,
+      currentPage: data.currentPage,
+      accessedAt:  data.accessedAt,
+      fields:      data.fields || {}
+    },
+    null,
+    2
+  );
+}
+
+/**
+ * BibTeX: запись типа @misc, подходит для Zotero, BibDesk, LaTeX.
+ *
+ * Ключ:  yar_<unitId>_<год>
+ * Поля:  title, institution, year, month, url, note (реквизиты дела),
+ *        howpublished (ссылка на архив)
+ */
+function formatBibTeX(data) {
+  const d    = new Date(data.accessedAt);
+  const year = isNaN(d) ? new Date().getFullYear() : d.getFullYear();
+  const mon  = isNaN(d) ? '' : d.toLocaleString('en', { month: 'long' }).toLowerCase();
+  const key  = `yar_${data.unitId || 'unknown'}_${year}`;
+
+  // Экранирование для BibTeX: фигурные скобки и обратный слэш
+  const bib  = v => String(v ?? '').replace(/[\\{}]/g, m => `\\${m}`);
+  const note = Object.entries(data.fields || {})
+    .slice(0, 10)                           // не перегружаем поле note
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('; ');
+
+  const lines = [
+    `@misc{${key},`,
+    `  title        = {${bib(data.title || 'Без названия')}},`,
+    `  institution  = {${bib(data.archive)}},`,
+    `  year         = {${year}},`,
+  ];
+
+  if (mon) lines.push(`  month        = {${mon}},`);
+  lines.push(`  url          = {${bib(data.url)}},`);
+  if (note) lines.push(`  note         = {Unit ID: ${data.unitId}. ${bib(note)}},`);
+  else      lines.push(`  note         = {Unit ID: ${data.unitId}},`);
+  lines.push(`  howpublished = {\\url{${bib(data.url)}}}`);
+  lines.push(`}`);
+
+  return lines.join('\n');
+}
+
+/** «15.07.2024» из ISO-строки */
+function formatDateRu(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    });
+  } catch { return iso || ''; }
+}
+
+/**
+ * Запрашивает метаданные из content-script и вызывает колбэк с объектом данных.
+ * Показывает toast при ошибке.
+ */
+function fetchMetaAndExport(callback) {
+  sendToActiveTab({ type: 'GET_METADATA' }, response => {
+    if (chrome.runtime.lastError || !response) {
+      showToast('Ошибка: нет связи со страницей', 3000); return;
+    }
+    if (response.error) {
+      showToast('Откройте документ на странице архива', 3000); return;
+    }
+    callback(response.data);
+  });
+}
+
+function safeFilename(data, ext) {
+  const title = data.title
+    ? data.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)
+    : 'metadata';
+  return `${title}_unit_${data.unitId || 'unknown'}.${ext}`;
+}
+
+exportCSV.addEventListener('click', () => {
+  fetchMetaAndExport(data => {
+    downloadTextFile(safeFilename(data, 'csv'), formatCSV(data), 'text/csv');
+    showToast('CSV сохранён', 2000);
+  });
+});
+
+exportJSON.addEventListener('click', () => {
+  fetchMetaAndExport(data => {
+    downloadTextFile(safeFilename(data, 'json'), formatJSON(data), 'application/json');
+    showToast('JSON сохранён', 2000);
+  });
+});
+
+exportBibTeX.addEventListener('click', () => {
+  fetchMetaAndExport(data => {
+    downloadTextFile(safeFilename(data, 'bib'), formatBibTeX(data), 'text/plain');
+    showToast('BibTeX сохранён', 2000);
+  });
+});
+
+// Аккордеон «Экспорт»
+exportToggle.addEventListener('click', () => {
+  const isOpen = exportSection.classList.toggle('open');
+  exportToggle.setAttribute('aria-expanded', String(isOpen));
+});
+
+// ── История загрузок ──────────────────────────────────────────────────────────
 
 function relativeTime(ts) {
   const diff = Date.now() - ts;
@@ -306,10 +551,7 @@ function renderHistory(entries) {
   const old = historyList.querySelectorAll('.history-item');
   old.forEach(el => el.remove());
 
-  if (!entries.length) {
-    historyEmpty.style.display = 'block';
-    return;
-  }
+  if (!entries.length) { historyEmpty.style.display = 'block'; return; }
   historyEmpty.style.display = 'none';
 
   entries.slice(0, 8).forEach(entry => {
@@ -353,10 +595,10 @@ function loadHistory() {
 historyToggle.addEventListener('click', () => {
   const isOpen = historySection.classList.toggle('open');
   historyToggle.setAttribute('aria-expanded', String(isOpen));
-  if (isOpen) loadHistory(); 
+  if (isOpen) loadHistory();
 });
 
-// ── Обработчики кнопок ──
+// ── Обработчики основных кнопок ───────────────────────────────────────────────
 
 btnAll.addEventListener('click', () => {
   if (isRunning || !isArchivePage) return;
@@ -441,10 +683,11 @@ if (bannerArchivesLink) {
   });
 }
 
-// ── Клавиатурные сокращения ──
+// ── Клавиатурные сокращения ───────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
   if (e.target === thumbStart || e.target === thumbEnd) return;
+  if (e.target === notesArea) return; // не перехватываем пробел в textarea
 
   if (e.code === 'Space' && isRunning) {
     e.preventDefault(); btnPause.click();
@@ -457,7 +700,7 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ── Входящие сообщения ──
+// ── Входящие сообщения ────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(msg => {
   if (!msg?.type) return;
@@ -534,13 +777,12 @@ chrome.runtime.onMessage.addListener(msg => {
   }
 });
 
-// ── Инициализация ──
+// ── Инициализация ─────────────────────────────────────────────────────────────
 
 (function init() {
   setRunningUI(false, false);
   setArchivePage(false);
 
-  // ── Тема ──
   chrome.storage.sync.get({ theme: 'auto', maxPages: 1500 }, items => {
     applyTheme(items.theme);
     rangeMax = items.maxPages || 1500;
@@ -549,11 +791,9 @@ chrome.runtime.onMessage.addListener(msg => {
     updateRangeUI();
   });
 
-  // ── Счётчик истории ──
   chrome.storage.local.get({ yar_history: [] }, data => {
     const entries = Array.isArray(data.yar_history) ? data.yar_history : [];
     historyCount.textContent = entries.length;
-    if (entries.length > 0) historySection.style.borderTopColor = '';
   });
 
   sendToActiveTab({ type: 'GET_STATE' }, state => {
@@ -561,6 +801,10 @@ chrome.runtime.onMessage.addListener(msg => {
     if (!state)                   { setArchivePage(false); return; }
 
     setArchivePage(!!state.isArchivePage);
+
+    // Сохраняем unit и загружаем заметку
+    currentUnit = state.unit || null;
+    if (currentUnit) loadNotes(currentUnit);
 
     if (state.resumeState && !state.isRunning && state.isArchivePage) {
       const rs      = state.resumeState;

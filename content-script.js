@@ -110,6 +110,10 @@ function getTitleFromPage() {
   return h && h.textContent ? h.textContent.trim() : null;
 }
 
+/**
+ * Собирает плоский текстовый список реквизитов документа
+ * (для вставки в _meta.txt).
+ */
 function collectPageMeta() {
   const lines = [];
 
@@ -126,6 +130,58 @@ function collectPageMeta() {
   }
 
   return lines.slice(0, 30).join('\n');
+}
+
+/**
+ * Собирает структурированный объект реквизитов документа:
+ * ключ → значение из таблиц на странице.
+ * Используется для экспорта в CSV / JSON / BibTeX.
+ * @returns {Record<string, string>}
+ */
+function collectStructuredMeta() {
+  const result = {};
+
+  document.querySelectorAll('table.table tr, .unit-info tr, .well tr').forEach(row => {
+    const cells = [...row.querySelectorAll('td, th')]
+      .map(c => c.textContent.trim())
+      .filter(Boolean);
+    if (cells.length >= 2) {
+      const key   = cells[0].replace(/:$/, '').trim();
+      const value = cells.slice(1).join('; ').trim();
+      if (key && value) result[key] = value;
+    }
+  });
+
+  if (!Object.keys(result).length) {
+    let idx = 0;
+    document.querySelectorAll('.well p, .description p, .card-body p').forEach(p => {
+      const t = p.textContent.trim();
+      if (t) result[`Описание ${++idx}`] = t;
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Возвращает полный объект метаданных текущего документа.
+ * Используется обработчиком GET_METADATA для экспорта.
+ */
+function getFullMetadata() {
+  const unit     = getUnitId();
+  const title    = getTitleFromPage();
+  const metaRows = collectStructuredMeta();
+
+  return {
+    unitId:      unit     || '',
+    title:       title    || '',
+    archive:     location.hostname,
+    archiveNum:  cachedArchNum || '',
+    url:         location.href,
+    currentPage: detectCurrentPage(),
+    accessedAt:  new Date().toISOString(),
+    fields:      metaRows   // { "Фонд": "...", "Опись": "...", … }
+  };
 }
 
 function sanitizeForFilename(s) {
@@ -334,7 +390,7 @@ function saveHistory(entry) {
 // ── PDF: парсинг заголовка ──
 
 function parseJpegHeader(bytes) {
-  let i = 2; // пропускаем SOI (FF D8)
+  let i = 2;
   while (i + 9 < bytes.length) {
     if (bytes[i] !== 0xFF) { i++; continue; }
     const m = bytes[i + 1];
@@ -348,34 +404,19 @@ function parseJpegHeader(bytes) {
       };
     }
 
-    // Маркеры без тела
     if (m === 0xD8 || m === 0xD9 || (m >= 0xD0 && m <= 0xD7)) { i += 2; continue; }
 
-    // Сегменты с длиной
     if (i + 3 >= bytes.length) break;
     const segLen = (bytes[i + 2] << 8) | bytes[i + 3];
     if (segLen < 2) break;
     i += 2 + segLen;
   }
 
-  // A4 @ 300 dpi как запасной вариант
   return { w: 2480, h: 3508, cs: '/DeviceGray' };
 }
 
 // ── PDF: компоновщик ──
 
-/**
- * Строит минимальный корректный PDF 1.4 из набора JPEG-страниц.
- * Схема объектов:
- *   1 — Catalog
- *   2 — Pages (дерево)
- *   для страницы i (0-based):
- *     3 + i*3 — Page
- *     4 + i*3 — XObject (встроенный JPEG)
- *     5 + i*3 — Content stream (оператор рисования)
- * @param {Array<{ bytes: Uint8Array, w: number, h: number, cs: string }>} pages
- * @returns {Uint8Array}
- */
 function buildPDF(pages) {
   const enc    = new TextEncoder();
   const chunks = [];
@@ -395,24 +436,19 @@ function buildPDF(pages) {
     write('\nendobj\n');
   }
 
-  // Заголовок
   write('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n');
 
-  // Catalog
   obj(1, () => write('<< /Type /Catalog /Pages 2 0 R >>'));
 
-  // Pages
   const kidRefs = pages.map((_, i) => `${3 + i * 3} 0 R`).join(' ');
   obj(2, () => write(`<< /Type /Pages /Kids [${kidRefs}] /Count ${pages.length} >>`));
 
-  // Страницы
   for (let i = 0; i < pages.length; i++) {
     const { bytes, w, h, cs } = pages[i];
     const pageId = 3 + i * 3;
     const xobjId = 4 + i * 3;
     const cntId  = 5 + i * 3;
 
-    // XObject — встроенный JPEG (фильтр DCTDecode)
     obj(xobjId, () => {
       write(
         `<< /Type /XObject /Subtype /Image ` +
@@ -425,7 +461,6 @@ function buildPDF(pages) {
       write('\nendstream');
     });
 
-    // Content stream: рисуем XObject на всю страницу
     const csBytes = enc.encode(`q ${w} 0 0 ${h} 0 0 cm /Im Do Q`);
     obj(cntId, () => {
       write(`<< /Length ${csBytes.length} >>\nstream\n`);
@@ -433,7 +468,6 @@ function buildPDF(pages) {
       write('\nendstream');
     });
 
-    // Page
     obj(pageId, () => {
       write(
         `<< /Type /Page /Parent 2 0 R ` +
@@ -444,7 +478,6 @@ function buildPDF(pages) {
     });
   }
 
-  // xref table
   const xrefStart = pos;
   const objCount  = 3 + pages.length * 3;
   write(`xref\n0 ${objCount}\n`);
@@ -453,10 +486,8 @@ function buildPDF(pages) {
     write(`${String(xref[id] ?? 0).padStart(10, '0')} 00000 n\r\n`);
   }
 
-  // Trailer
   write(`trailer\n<< /Size ${objCount} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
 
-  // Склейка
   const total  = chunks.reduce((s, c) => s + c.length, 0);
   const result = new Uint8Array(total);
   let offset   = 0;
@@ -466,7 +497,6 @@ function buildPDF(pages) {
 
 // ── Генерация PDF ──
 
-/** Забирает страницы документа через fetch(), строит PDF в памяти и сохраняет через временный <a download> в DOM страницы. */
 async function generatePDF(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
   isRunning = true;
@@ -517,7 +547,6 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
       await sleep(2000);
     }
 
-    // Загружаем страницы и парсим JPEG-заголовки
     const pagesData  = [];
     const failedNums = [];
 
@@ -552,7 +581,6 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
     sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
     const pdfBytes = buildPDF(pagesData);
 
-    // Скачивание через временный <a download>
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -567,7 +595,6 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
       { isPDF: true, failedCount: failedNums.length }
     );
 
-    // История
     saveHistory({
       unit,
       title:     titleRaw || `Документ ${unit}`,
@@ -625,7 +652,6 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
     let pFrom, total;
     let isResuming = false;
 
-    // Проверяем сохранённый прогресс
     if (overrideFrom === null) {
       const saved = await getResumeState(unit);
       if (saved?.lastPage && saved?.totalPages) {
@@ -688,7 +714,6 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
     const failedNote = failedPages.length > 0 ? ` (пропущено: ${failedPages.length})` : '';
     sendDone(`Готово: ${total - pFrom + 1} стр.${failedNote}`, { failedCount: failedPages.length });
 
-    // История
     saveHistory({
       unit,
       title:     getTitleFromPage() || `Документ ${unit}`,
@@ -773,7 +798,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const unit    = getUnitId();
       const curPage = detectCurrentPage();
 
-      // URL превью текущей страницы — только если archNum уже определён
       const previewUrl = (unit && cachedArchNum)
         ? imageUrl(unit, cachedArchNum, curPage)
         : null;
@@ -791,6 +815,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       if (unit) getResumeState(unit).then(respond);
       else      respond(null);
+      return true;
+    }
+
+    case 'GET_METADATA': {
+      // Возвращает структурированные метаданные текущего документа.
+      // Используется popup для экспорта в CSV / JSON / BibTeX.
+      const unit = getUnitId();
+      if (!unit) {
+        sendResponse({ error: 'not_archive_page' });
+      } else {
+        sendResponse({ ok: true, data: getFullMetadata() });
+      }
       return true;
     }
 
@@ -819,4 +855,4 @@ ensureSettings().then(async () => {
   }
 });
 
-log('content-script loaded (v2.2.0)');
+log('content-script loaded (v2.2.2)');
