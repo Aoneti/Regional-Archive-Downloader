@@ -11,8 +11,8 @@
   --muted:        #777777;
   --panel:        #f5f5f5;
   --border:       #e0e0e0;
-  --accent:       #7FBE00;  
-  --accent-hover: #6aab00; 
+  --accent:       #7FBE00;
+  --accent-hover: #6aab00;
   --accent-dim:   rgba(127,190,0,0.12);
   --danger:       #d93d3d;
   --radius-sm:    6px;
@@ -35,94 +35,59 @@ html.dark {
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   font-size: 13px;
-  margin: 0;
-  padding: 24px 24px 32px;
+  margin: 0; padding: 24px 24px 32px;
   max-width: 540px;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--bg); color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
 
 /* ── Шапка ───────────────────────────────────────────────────────────── */
 .page-title {
-  font-size: 17px;
-  font-weight: 700;
-  margin: 0 0 20px;
-  letter-spacing: -0.3px;
+  font-size: 17px; font-weight: 700;
+  margin: 0 0 20px; letter-spacing: -0.3px;
 }
 
 /* ── Секции ──────────────────────────────────────────────────────────── */
 .section {
-  margin-bottom: 12px;
-  padding: 16px;
+  margin-bottom: 12px; padding: 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--panel);
 }
-
 .section-title {
-  display: block;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--muted);
-  margin-bottom: 12px;
+  display: block; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted); margin-bottom: 12px;
 }
 
 /* ── Строка с меткой ─────────────────────────────────────────────────── */
-.field {
-  margin-bottom: 16px;
-}
+.field { margin-bottom: 16px; }
 .field:last-child { margin-bottom: 0; }
-
 .field-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  display: flex; justify-content: space-between; align-items: baseline;
   margin-bottom: 8px;
 }
-.field-name {
-  font-size: 13px;
-  font-weight: 500;
-}
+.field-name { font-size: 13px; font-weight: 500; }
 .field-value {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  min-width: 40px;
-  text-align: right;
+  font-size: 13px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums; min-width: 40px; text-align: right;
 }
 
 /* ── Slider ──────────────────────────────────────────────────────────── */
-.slider-wrap {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.slider-wrap { display: flex; align-items: center; gap: 10px; }
 
 input[type="range"] {
-  flex: 1;
-  height: 3px;
-  appearance: none;
-  -webkit-appearance: none;
-  background: var(--border);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  accent-color: var(--accent);
+  flex: 1; height: 3px; appearance: none; -webkit-appearance: none;
+  background: var(--border); border-radius: 2px;
+  outline: none; cursor: pointer; accent-color: var(--accent);
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
   background: var(--accent);
   border: 2.5px solid var(--bg);
   box-shadow: 0 0 0 1.5px var(--accent);
-  cursor: grab;
-  transition: transform 0.1s;
+  cursor: grab; transition: transform 0.1s;
 }
 input[type="range"]::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.2); }
 input[type="range"]:focus-visible::-webkit-slider-thumb {
@@ -130,157 +95,85 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 }
 
 input[type="number"].mini {
-  width: 68px;
-  padding: 5px 7px;
+  width: 68px; padding: 5px 7px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
+  background: var(--bg); color: var(--text);
+  font-family: inherit; font-size: 12px;
   font-variant-numeric: tabular-nums;
-  text-align: center;
-  flex-shrink: 0;
+  text-align: center; flex-shrink: 0;
   transition: border-color 0.15s;
 }
 input[type="number"].mini:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--accent); outline-offset: 1px;
   border-color: var(--accent);
-}
-input[type="number"].mini:invalid,
-input[type="number"].mini.out-of-range {
-  border-color: var(--danger);
-  outline-color: var(--danger);
 }
 
 /* ── Чипы пресетов ───────────────────────────────────────────────────── */
-.presets {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
+.presets { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
 .preset {
-  padding: 3px 9px;
-  border-radius: 12px;
+  padding: 3px 9px; border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-  font-family: inherit;
-  font-weight: 500;
+  background: var(--bg); color: var(--muted);
+  cursor: pointer; font-size: 11px; font-family: inherit; font-weight: 500;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .preset:hover { border-color: var(--accent); color: var(--accent); }
 .preset.active {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--accent-dim); border-color: var(--accent); color: var(--accent);
 }
 
 /* ── Hint ────────────────────────────────────────────────────────────── */
-.hint {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 6px;
-  line-height: 1.5;
-}
+.hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
 code {
-  font-family: monospace;
-  font-size: 11px;
-  background: var(--border);
-  padding: 1px 4px;
-  border-radius: 3px;
+  font-family: monospace; font-size: 11px;
+  background: var(--border); padding: 1px 4px; border-radius: 3px;
 }
 
 /* ── Toggle строка (checkbox) ────────────────────────────────────────── */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .toggle-row:last-child { margin-bottom: 0; }
-
 .toggle-checkbox {
-  position: relative;
-  width: 30px;
-  height: 17px;
-  flex-shrink: 0;
+  position: relative; width: 30px; height: 17px; flex-shrink: 0;
 }
-.toggle-checkbox input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
+.toggle-checkbox input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-track {
-  position: absolute;
-  inset: 0;
-  background: var(--border);
-  border-radius: 9px;
-  cursor: pointer;
-  transition: background 0.2s;
+  position: absolute; inset: 0;
+  background: var(--border); border-radius: 9px;
+  cursor: pointer; transition: background 0.2s;
 }
 .toggle-track::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.2s;
+  content: ''; position: absolute;
+  top: 2px; left: 2px; width: 13px; height: 13px;
+  border-radius: 50%; background: #fff; transition: transform 0.2s;
 }
 .toggle-checkbox input:checked + .toggle-track { background: var(--accent); }
 .toggle-checkbox input:checked + .toggle-track::after { transform: translateX(13px); }
 .toggle-checkbox input:focus-visible + .toggle-track {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }
-.toggle-label {
-  font-size: 13px;
-  cursor: pointer;
-  line-height: 1.4;
-}
+.toggle-label { font-size: 13px; cursor: pointer; line-height: 1.4; }
 
-/* ── Тема ────────────────────────────────────────────────────────────── */
+/* ── Тема: три кнопки ────────────────────────────────────────────────── */
 .theme-btns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
 }
 .theme-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 9px;
+  display: flex; align-items: center; justify-content: center;
+  gap: 7px; padding: 9px;
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--border);
-  background: var(--bg);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-  font-family: inherit;
-  font-weight: 500;
+  background: var(--bg); color: var(--muted);
+  cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 500;
   transition: border-color 0.13s, color 0.13s, background 0.13s;
 }
 .theme-btn:hover { border-color: var(--accent); color: var(--accent); }
 .theme-btn.active {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-  color: var(--accent);
+  border-color: var(--accent); background: var(--accent-dim); color: var(--accent);
 }
 .theme-btn .dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
-  flex-shrink: 0;
+  width: 10px; height: 10px;
+  border-radius: 50%; border: 1.5px solid currentColor; flex-shrink: 0;
 }
 .theme-btn.active .dot {
   background: var(--accent);
@@ -288,27 +181,16 @@ code {
 }
 
 /* ── Кнопки сохранения ───────────────────────────────────────────────── */
-.actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 16px;
-}
+.actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .btn {
-  padding: 9px 18px;
-  border-radius: var(--radius-sm);
+  padding: 9px 18px; border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  transition: background 0.12s;
+  cursor: pointer; font-family: inherit; font-size: 13px;
+  font-weight: 500; transition: background 0.12s;
 }
 .btn-save {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 700;
+  background: var(--accent); border-color: var(--accent);
+  color: #fff; font-weight: 700;
 }
 .btn-save:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn-reset { background: var(--bg); color: var(--text); }
@@ -316,90 +198,36 @@ code {
 html.dark .btn-reset { border-color: #555555; }
 
 /* ── Сообщение обратной связи ────────────────────────────────────────── */
-.msg {
-  font-size: 12px;
-  margin-left: 2px;
-  align-self: center;
-  transition: opacity 0.2s;
-}
+.msg { font-size: 12px; margin-left: 2px; align-self: center; transition: opacity 0.2s; }
 .msg--ok    { color: var(--accent); }
 .msg--error { color: var(--danger); font-weight: 600; }
 
-/* ── Секция архивов ──────────────────────────────────────────────────── */
+/* ── Аккордеон архивов ───────────────────────────────────────────────── */
 .archives-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  text-align: left;
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  color: var(--text); text-align: left;
 }
 .archives-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 3px;
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px;
 }
 .archives-toggle-icon {
-  font-size: 11px;
-  color: var(--muted);
-  transition: transform 0.2s;
-  flex-shrink: 0;
+  font-size: 11px; color: var(--muted); transition: transform 0.2s; flex-shrink: 0;
 }
-.archives-toggle.open .archives-toggle-icon {
-  transform: rotate(180deg);
-}
-
-.archives-list {
-  display: none;
-  margin-top: 14px;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
+.archives-toggle.open .archives-toggle-icon { transform: rotate(180deg); }
+.archives-list { display: none; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 14px; }
 .archives-list.visible { display: block; }
-
-.archive-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 12px;
-}
+.archive-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
 .archive-item:last-child { margin-bottom: 0; }
-
 .archive-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  margin-top: 4px;
-  flex-shrink: 0;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); margin-top: 4px; flex-shrink: 0;
 }
-
-.archive-info {}
-.archive-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.3;
-}
-.archive-region {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 1px;
-}
+.archive-name { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; }
 .archive-url {
-  font-size: 11px;
-  color: var(--accent);
-  text-decoration: none;
-  display: inline-block;
-  margin-top: 2px;
-  word-break: break-all;
+  font-size: 11px; color: var(--accent); text-decoration: none;
+  display: inline-block; margin-top: 2px; word-break: break-all;
 }
 .archive-url:hover { text-decoration: underline; }
 </style>
@@ -424,10 +252,10 @@ html.dark .btn-reset { border-color: #555555; }
              aria-label="Задержка точное значение">
     </div>
     <div class="presets" role="group" aria-label="Пресеты задержки">
-      <button class="preset" data-target="delayMs" data-value="0"    title="Без задержки">⚡ Быстро</button>
-      <button class="preset active" data-target="delayMs" data-value="250"  title="250 мс">✦ Нормально</button>
-      <button class="preset" data-target="delayMs" data-value="600"  title="600 мс">🐢 Медленно</button>
-      <button class="preset" data-target="delayMs" data-value="1200" title="1200 мс — уважительно к серверу">🌿 Вежливо</button>
+      <button class="preset" data-target="delayMs" data-value="0">⚡ Быстро</button>
+      <button class="preset active" data-target="delayMs" data-value="250">✦ Нормально</button>
+      <button class="preset" data-target="delayMs" data-value="600">🐢 Медленно</button>
+      <button class="preset" data-target="delayMs" data-value="1200">🌿 Вежливо</button>
     </div>
     <div class="hint">Время ожидания между отправкой загрузок. Меньше — быстрее, но больше нагрузка на сервер архива.</div>
   </div>
@@ -496,6 +324,9 @@ html.dark .btn-reset { border-color: #555555; }
 <div class="section">
   <span class="section-title">Тема интерфейса</span>
   <div class="theme-btns" role="radiogroup" aria-label="Выбор темы">
+    <button class="theme-btn" id="themeAutoBtn" data-theme="auto" role="radio" aria-checked="false">
+      <span class="dot"></span> Как в системе
+    </button>
     <button class="theme-btn active" id="themeLightBtn" data-theme="light" role="radio" aria-checked="true">
       <span class="dot"></span> Светлая
     </button>
@@ -511,41 +342,35 @@ html.dark .btn-reset { border-color: #555555; }
     <span>🗃️ Поддерживаемые архивы</span>
     <span class="archives-toggle-icon" aria-hidden="true">▼</span>
   </button>
-
   <div class="archives-list" id="archivesList" role="region" aria-label="Список поддерживаемых архивов">
-
     <div class="archive-item">
       <div class="archive-dot"></div>
-      <div class="archive-info">
+      <div>
         <div class="archive-name">Архив Ярославской области</div>
-        <a class="archive-url" href="https://af.yar-archives.ru" target="_blank" rel="noopener noreferrer">af.yar-archives.ru</a>
+        <a class="archive-url" href="https://af.yar-archives.ru" target="_blank" rel="noopener">af.yar-archives.ru</a>
       </div>
     </div>
-
     <div class="archive-item">
       <div class="archive-dot"></div>
-      <div class="archive-info">
+      <div>
         <div class="archive-name">Архив Вологодской области</div>
-        <a class="archive-url" href="https://gosarchive.gov35.ru" target="_blank" rel="noopener noreferrer">gosarchive.gov35.ru</a>
+        <a class="archive-url" href="https://gosarchive.gov35.ru" target="_blank" rel="noopener">gosarchive.gov35.ru</a>
       </div>
     </div>
-
     <div class="archive-item">
       <div class="archive-dot"></div>
-      <div class="archive-info">
+      <div>
         <div class="archive-name">Архив Пермского края</div>
-        <a class="archive-url" href="https://archives.permkrai.ru" target="_blank" rel="noopener noreferrer">archives.permkrai.ru</a>
+        <a class="archive-url" href="https://archives.permkrai.ru" target="_blank" rel="noopener">archives.permkrai.ru</a>
       </div>
     </div>
-
     <div class="archive-item">
       <div class="archive-dot"></div>
-      <div class="archive-info">
+      <div>
         <div class="archive-name">Архив Саратовской области</div>
-        <a class="archive-url" href="https://archivesaratov.ru" target="_blank" rel="noopener noreferrer">archivesaratov.ru</a>
+        <a class="archive-url" href="https://archivesaratov.ru" target="_blank" rel="noopener">archivesaratov.ru</a>
       </div>
     </div>
-
   </div>
 </div>
 

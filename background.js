@@ -19,7 +19,7 @@ function suppressLastError() {
 chrome.runtime.onMessage.addListener((msg, _sender) => {
   if (!msg || !msg.type) return;
 
-   if (msg.type === 'DOWNLOAD') {
+  if (msg.type === 'DOWNLOAD') {
     chrome.downloads.download(
       {
         url:            msg.url,
@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener((msg, _sender) => {
     return;
   }
 
-    if (msg.type === 'SET_ICON') {
+  if (msg.type === 'SET_ICON') {
     const path = msg.state === 'active' ? ICONS_ACTIVE : ICONS_INACTIVE;
     chrome.action.setIcon({ path }, () => {
       if (chrome.runtime.lastError) {

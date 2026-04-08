@@ -4,33 +4,46 @@ const DEFAULTS = {
   maxPages:            1500,
   startFromCurrent:    true,
   concurrentDownloads: 4,
-  theme:               'light'
+  theme:               'auto'
 };
 
 const LIMITS = {
-  delayMs:             { min: 0,    max: 3000 },
-  maxPages:            { min: 1,    max: 5000 },
-  concurrentDownloads: { min: 1,    max: 8    }
+  delayMs:             { min: 0,   max: 3000 },
+  maxPages:            { min: 1,   max: 5000 },
+  concurrentDownloads: { min: 1,   max: 8    }
 };
-
-const DELAY_PRESETS = [0, 250, 600, 1200];
 
 function $(id) { return document.getElementById(id); }
 
-// ── Тема ──────────────────────────────────────────────────────────────────────
+// ── Тема ──
+
+const mq = window.matchMedia('(prefers-color-scheme: dark)');
 
 function applyTheme(theme) {
-  document.documentElement.classList.toggle('dark', theme === 'dark');
-  $('themeLightBtn').classList.toggle('active', theme === 'light');
-  $('themeLightBtn').setAttribute('aria-checked', String(theme === 'light'));
-  $('themeDarkBtn').classList.toggle('active', theme === 'dark');
-  $('themeDarkBtn').setAttribute('aria-checked', String(theme === 'dark'));
+  if (theme === 'auto') {
+    document.documentElement.classList.toggle('dark', mq.matches);
+  } else {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }
+
+  ['auto', 'light', 'dark'].forEach(t => {
+    const btn = $(`theme${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+    if (!btn) return;
+    btn.classList.toggle('active', t === theme);
+    btn.setAttribute('aria-checked', String(t === theme));
+  });
 }
 
-$('themeLightBtn').addEventListener('click', () => applyTheme('light'));
-$('themeDarkBtn').addEventListener('click',  () => applyTheme('dark'));
+mq.addEventListener('change', () => {
+  const active = document.querySelector('.theme-btn.active');
+  if (active?.dataset.theme === 'auto') applyTheme('auto');
+});
 
-// ── Двусторонняя привязка слайдер ↔ число ────────────────────────────────────
+$('themeAutoBtn') .addEventListener('click', () => applyTheme('auto'));
+$('themeLightBtn').addEventListener('click', () => applyTheme('light'));
+$('themeDarkBtn') .addEventListener('click', () => applyTheme('dark'));
+
+// ── Двусторонняя привязка слайдер ↔ число ──
 
 function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
   const slider  = $(sliderId);
@@ -42,8 +55,7 @@ function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
 
   function update(value) {
     const v = clamp(Math.round(Number(value)));
-    slider.value  = v;
-    number.value  = v;
+    slider.value = v; number.value = v;
     if (display) display.textContent = v;
     if (numberId === 'delayMs') syncPresets(v);
   }
@@ -55,11 +67,11 @@ function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
   update(number.value || DEFAULTS[limitKey]);
 }
 
-bindSliderNumber('delaySlider',      'delayMs',            'delayVal',      'delayMs');
-bindSliderNumber('maxPagesSlider',   'maxPages',           'maxPagesVal',   'maxPages');
-bindSliderNumber('concurrentSlider', 'concurrentDownloads','concurrentVal', 'concurrentDownloads');
+bindSliderNumber('delaySlider',      'delayMs',             'delayVal',      'delayMs');
+bindSliderNumber('maxPagesSlider',   'maxPages',            'maxPagesVal',   'maxPages');
+bindSliderNumber('concurrentSlider', 'concurrentDownloads', 'concurrentVal', 'concurrentDownloads');
 
-// ── Пресеты задержки ──────────────────────────────────────────────────────────
+// ── Пресеты задержки ──
 
 function syncPresets(value) {
   document.querySelectorAll('.preset[data-target="delayMs"]').forEach(btn => {
@@ -69,16 +81,14 @@ function syncPresets(value) {
 
 document.querySelectorAll('.preset').forEach(btn => {
   btn.addEventListener('click', () => {
-    const target = btn.dataset.target;
-    const value  = Number(btn.dataset.value);
-    const input  = $(target);
+    const input = $(btn.dataset.target);
     if (!input) return;
-    input.value = value;
-    input.dispatchEvent(new Event('change')); 
+    input.value = Number(btn.dataset.value);
+    input.dispatchEvent(new Event('change'));
   });
 });
 
-// ── Аккордеон «Доступные архивы» ─────────────────────────────────────────────
+// ── Аккордеон «Доступные архивы» ──
 
 const archivesToggle = $('archivesToggle');
 const archivesList   = $('archivesList');
@@ -91,15 +101,14 @@ if (archivesToggle && archivesList) {
   });
 }
 
-// ── Загрузка настроек ─────────────────────────────────────────────────────────
+// ── Загрузка настроек ──
 
 function load() {
   chrome.storage.sync.get(DEFAULTS, items => {
-    $('createFolders').checked    = !!items.createFolders;
-    $('startFromCurrent').checked = !!items.startFromCurrent;
-
-    $('delayMs').value            = items.delayMs             ?? DEFAULTS.delayMs;
-    $('maxPages').value           = items.maxPages            ?? DEFAULTS.maxPages;
+    $('createFolders').checked     = !!items.createFolders;
+    $('startFromCurrent').checked  = !!items.startFromCurrent;
+    $('delayMs').value             = items.delayMs             ?? DEFAULTS.delayMs;
+    $('maxPages').value            = items.maxPages            ?? DEFAULTS.maxPages;
     $('concurrentDownloads').value = items.concurrentDownloads ?? DEFAULTS.concurrentDownloads;
 
     ['delayMs', 'maxPages', 'concurrentDownloads'].forEach(id => {
@@ -110,7 +119,7 @@ function load() {
   });
 }
 
-// ── Сохранение ────────────────────────────────────────────────────────────────
+// ── Сохранение ──
 
 function clampField(id, key) {
   const raw = parseInt($(id).value, 10);
@@ -124,15 +133,15 @@ function save() {
   const concurrentDownloads = clampField('concurrentDownloads', 'concurrentDownloads');
 
   if (delayMs === null || maxPages === null || concurrentDownloads === null) {
-    showMsg('Некорректные значения', 'error');
-    return;
+    showMsg('Некорректные значения', 'error'); return;
   }
 
   $('delayMs').value             = delayMs;
   $('maxPages').value            = maxPages;
   $('concurrentDownloads').value = concurrentDownloads;
 
-  const theme = document.querySelector('.theme-btn.active')?.dataset.theme ?? DEFAULTS.theme;
+  const activeThemeBtn = document.querySelector('.theme-btn.active');
+  const theme          = activeThemeBtn?.dataset.theme ?? DEFAULTS.theme;
 
   const toSave = {
     createFolders:       !!$('createFolders').checked,
@@ -144,10 +153,7 @@ function save() {
   };
 
   chrome.storage.sync.set(toSave, () => {
-    if (chrome.runtime.lastError) {
-      showMsg('Ошибка сохранения', 'error');
-      return;
-    }
+    if (chrome.runtime.lastError) { showMsg('Ошибка сохранения', 'error'); return; }
     showMsg('Сохранено');
     applyTheme(theme);
     chrome.runtime.sendMessage(
@@ -169,18 +175,17 @@ function resetDefaults() {
   });
 }
 
-// ── Сообщение обратной связи ──────────────────────────────────────────────────
+// ── Сообщение обратной связи ──
 
 function showMsg(text, kind = 'ok') {
   const el = $('msg');
-  el.textContent = text;
-  el.className   = 'msg msg--' + kind;
+  el.textContent = text; el.className = 'msg msg--' + kind;
   setTimeout(() => {
     if (el.textContent === text) { el.textContent = ''; el.className = 'msg'; }
   }, 2500);
 }
 
-// ── Инициализация ─────────────────────────────────────────────────────────────
+// ── Инициализация ──
 
 document.addEventListener('DOMContentLoaded', () => {
   load();

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>YARchive Downloader</title>
 <style>
-/* ── Переменные ───────────────────────────────────────────────────────── */
+/* ── Переменные ─────────────────────────────────────────────────────── */
 :root {
   --bg:             #ffffff;
   --text:           #1a1a1a;
@@ -12,7 +12,7 @@
   --panel:          #f4f4f4;
   --border:         #e2e2e2;
   --accent:         #7FBE00;
-  --accent-hover:   #6aab00; 
+  --accent-hover:   #6aab00;
   --accent-dim:     rgba(127,190,0,0.15);
   --danger:         #e05252;
   --danger-hover:   #c93c3c;
@@ -20,7 +20,10 @@
   --warn-border:    #f8d861;
   --warn-text:      #7a5c00;
   --success-bg:     #fff5ee;
-  --success-border: #F46A15; 
+  --success-border: #F46A15;
+  --pdf-color:      #D0021B;
+  --pdf-dim:        rgba(208,2,27,0.10);
+  --history-bg:     #f9f9f9;
   --radius-sm:      6px;
   --radius-md:      9px;
 }
@@ -39,19 +42,19 @@ html.dark {
   --warn-text:      #f8d06a;
   --success-bg:     #1f1005;
   --success-border: #7a3510;
+  --pdf-color:      #ff6b7a;
+  --pdf-dim:        rgba(255,107,122,0.12);
+  --history-bg:     #1a1a1a;
 }
 
-html.dark .header-gear {
-  background: #2a2a2a;
-}
+html.dark .header-gear { background: #2a2a2a; }
 
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
   position: relative;
   width: 284px;
-  margin: 0;
-  padding: 0;
+  margin: 0; padding: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   font-size: 13px;
   background: var(--bg);
@@ -59,7 +62,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Шапка ───────────────────────────────────────────────────────────── */
+/* ── Шапка ──────────────────────────────────────────────────────────── */
 .header {
   display: flex;
   align-items: center;
@@ -68,20 +71,14 @@ body {
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
-
 .header-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
+  font-size: 13px; font-weight: 700; letter-spacing: -0.2px;
 }
-
 .header-gear {
   background: #F4F4F4;
-  border: none;
-  cursor: pointer;
+  border: none; cursor: pointer;
   color: var(--text-muted);
-  font-size: 15px;
-  padding: 3px 5px;
+  font-size: 15px; padding: 3px 5px;
   border-radius: var(--radius-sm);
   line-height: 1;
   transition: background 0.12s, color 0.12s;
@@ -92,8 +89,7 @@ body {
 .banner {
   display: none;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 8px; padding: 10px 14px;
   border-bottom: 1px solid var(--border);
 }
 .banner.warn {
@@ -105,11 +101,8 @@ body {
 .banner-text { font-size: 12px; color: var(--warn-text); line-height: 1.5; }
 .banner-text a { color: var(--warn-text); font-weight: 600; text-decoration: underline; }
 
-/* ── Секция диапазона ────────────────────────────────────────────────── */
-.range-section {
-  padding: 12px 14px 8px;
-}
-
+/* ── Слайдер диапазона ───────────────────────────────────────────────── */
+.range-section { padding: 12px 14px 8px; }
 .range-row {
   display: flex;
   justify-content: space-between;
@@ -117,57 +110,34 @@ body {
   margin-bottom: 8px;
 }
 .range-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+  font-size: 11px; color: var(--text-muted);
+  font-weight: 500; text-transform: uppercase; letter-spacing: 0.4px;
 }
-.range-value {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* Dual-thumb трек */
 .range-wrap {
-  position: relative;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  padding: 0 7px;
-  margin-bottom: 4px;
+  position: relative; height: 22px;
+  display: flex; align-items: center;
+  padding: 0 7px; margin-bottom: 4px;
   touch-action: none;
 }
 .range-track {
-  position: relative;
-  width: 100%;
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
+  position: relative; width: 100%; height: 3px;
+  background: var(--border); border-radius: 2px;
 }
 .range-fill {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
+  position: absolute; top: 0; height: 100%;
+  background: var(--accent); border-radius: 2px;
   pointer-events: none;
   transition: left 0.05s, width 0.05s;
 }
 .range-thumb {
-  position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
+  position: absolute; top: 50%;
+  width: 14px; height: 14px;
   border-radius: 50%;
   background: var(--accent);
   border: 2.5px solid var(--bg);
   box-shadow: 0 0 0 1.5px var(--accent);
   transform: translate(-50%, -50%);
-  cursor: grab;
-  z-index: 3;
-  touch-action: none;
+  cursor: grab; z-index: 3; touch-action: none;
   transition: transform 0.1s, box-shadow 0.1s, left 0.05s;
 }
 .range-thumb:hover {
@@ -185,255 +155,283 @@ body {
   box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent);
 }
 .range-thumb.disabled { cursor: not-allowed; opacity: 0.4; pointer-events: none; }
-
 .range-hints {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 7px;
-  font-size: 10px;
-  color: var(--text-muted);
+  display: flex; justify-content: space-between;
+  padding: 0 7px; font-size: 10px; color: var(--text-muted);
 }
 .range-hints strong { color: var(--text); font-weight: 600; }
 
 /* ── Разделитель ─────────────────────────────────────────────────────── */
 .sep { height: 1px; background: var(--border); }
 
-/* ── Кнопки действий ─────────────────────────────────────────────────── */
+/* ── Кнопки ─────────────────────────────────────────────────────────── */
 .actions { padding: 12px 14px 8px; }
 
 .btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  width: 100%;
+  display: flex; align-items: center; justify-content: center;
+  gap: 7px; width: 100%;
   padding: 9px 12px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 600;
-  line-height: 1;
+  font-size: 13px; font-family: inherit; font-weight: 600; line-height: 1;
   transition: background 0.13s, border-color 0.13s, opacity 0.13s;
 }
-
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent); border-color: var(--accent); color: #fff;
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--accent-hover); border-color: var(--accent-hover);
 }
 
+/* Вторичные кнопки — ряд JPG + PDF */
+.btn-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  margin-top: 4px;
+}
 .btn-secondary {
   background: transparent;
-  border-color: transparent;
+  border: 1px solid var(--border);
   color: var(--text-muted);
-  font-weight: 500;
-  font-size: 12px;
-  margin-top: 4px;
+  font-weight: 500; font-size: 12px;
   padding: 6px 12px;
-  text-decoration: underline;
-  text-decoration-color: var(--border);
-  text-underline-offset: 2px;
+  border-radius: var(--radius-sm);
+  transition: border-color 0.13s, color 0.13s, background 0.13s;
 }
 .btn-secondary:hover:not(:disabled) {
   color: var(--accent);
-  text-decoration-color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* PDF-кнопка */
+.btn-pdf {
   background: transparent;
+  border: 1px solid var(--border);
+  color: var(--pdf-color);
+  font-weight: 600; font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: border-color 0.13s, background 0.13s;
+  display: flex; align-items: center; gap: 5px;
+}
+.btn-pdf:hover:not(:disabled) {
+  border-color: var(--pdf-color);
+  background: var(--pdf-dim);
+}
+.btn-pdf .pdf-badge {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.3px;
+  background: var(--pdf-color);
+  color: #fff;
+  padding: 1px 4px; border-radius: 3px;
+  line-height: 1.4;
 }
 
 .btn:disabled { opacity: 0.42; cursor: not-allowed; }
 
-/* ── Управление (Пауза / Стоп) ───────────────────────────────────────── */
+/* ── Управление ──────────────────────────────────────────────────────── */
 .controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 0 14px 12px;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 6px; padding: 0 14px 12px;
   border-top: 1px solid var(--border);
-  margin-top: 0;
-  padding-top: 8px;
+  margin-top: 0; padding-top: 8px;
 }
-
 .btn-ctrl {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 7px 8px;
+  display: flex; align-items: center; justify-content: center;
+  gap: 5px; padding: 7px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 12px;
-  font-family: inherit;
-  font-weight: 500;
-  transition: background 0.12s, opacity 0.12s;
+  background: var(--panel); color: var(--text);
+  cursor: pointer; font-size: 12px; font-family: inherit;
+  font-weight: 500; transition: background 0.12s, opacity 0.12s;
 }
 .btn-ctrl:hover:not(:disabled) { background: var(--border); }
 .btn-ctrl.danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
+  background: var(--danger); border-color: var(--danger); color: #fff;
 }
 .btn-ctrl.danger:hover:not(:disabled) {
-  background: var(--danger-hover);
-  border-color: var(--danger-hover);
+  background: var(--danger-hover); border-color: var(--danger-hover);
 }
 .btn-ctrl:disabled { opacity: 0.38; cursor: not-allowed; }
 
 /* ── Прогресс ────────────────────────────────────────────────────────── */
 .progress-section { padding: 0 14px 12px; }
-
 .progress-track {
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 8px;
+  height: 6px; background: var(--border);
+  border-radius: 3px; overflow: hidden; margin-bottom: 8px;
 }
 .progress-bar {
-  height: 100%;
-  width: 0%;
-  background: var(--accent);
-  border-radius: 3px;
-  transition: width 0.35s ease;
-  position: relative;
-  overflow: hidden;
+  height: 100%; width: 0%; background: var(--accent);
+  border-radius: 3px; transition: width 0.35s ease;
+  position: relative; overflow: hidden;
 }
 .progress-bar.active::after {
   content: '';
-  position: absolute;
-  inset: 0;
+  position: absolute; inset: 0;
   background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
   animation: shimmer 1.4s linear infinite;
 }
-@keyframes shimmer {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(210%); }
-}
-
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(210%); } }
 .progress-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: flex; justify-content: space-between; align-items: flex-start;
 }
 .progress-status {
-  font-size: 11px;
-  color: var(--text);
-  line-height: 1.45;
-  flex: 1;
-  min-height: 1.45em;
+  font-size: 11px; color: var(--text);
+  line-height: 1.45; flex: 1; min-height: 1.45em;
 }
 .progress-pct {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent);
-  flex-shrink: 0;
-  margin-left: 6px;
-  font-variant-numeric: tabular-nums;
+  font-size: 11px; font-weight: 700;
+  color: var(--accent); flex-shrink: 0;
+  margin-left: 6px; font-variant-numeric: tabular-nums;
 }
-.progress-eta {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
+.progress-eta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
 /* ── Итоговая карточка ───────────────────────────────────────────────── */
 .summary-card {
-  display: none;
-  margin: 0 14px 12px;
+  display: none; margin: 0 14px 12px;
   padding: 10px 12px;
   background: var(--success-bg);
   border: 1px solid var(--success-border);
   border-radius: var(--radius-md);
-  font-size: 12px;
 }
 .summary-card.visible { display: block; }
 .summary-title {
-  font-weight: 700;
-  color: var(--accent);
-  margin-bottom: 6px;
-  font-size: 12px;
+  font-weight: 700; color: var(--accent);
+  margin-bottom: 6px; font-size: 12px;
 }
 .summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px 8px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px;
 }
 .summary-item { color: var(--text-muted); font-size: 11px; }
 .summary-item strong { color: var(--text); font-weight: 600; }
 
-/* ── Toast-уведомление ───────────────────────────────────────────────── */
+/* ── История загрузок ────────────────────────────────────────────────── */
+.history-section {
+  border-top: 1px solid var(--border);
+}
+.history-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 14px;
+  background: none; border: none;
+  width: 100%; cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px; font-family: inherit; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  transition: color 0.12s;
+}
+.history-toggle:hover { color: var(--text); }
+.history-toggle-right {
+  display: flex; align-items: center; gap: 6px;
+}
+.history-count {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 6px; color: var(--text-muted);
+  min-width: 20px; text-align: center;
+}
+.history-chevron {
+  font-size: 10px; color: var(--text-muted);
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.history-section.open .history-chevron { transform: rotate(180deg); }
+
+.history-list {
+  display: none;
+  padding: 0 14px 10px;
+}
+.history-section.open .history-list { display: block; }
+
+.history-empty {
+  font-size: 11px; color: var(--text-muted);
+  text-align: center; padding: 8px 0 4px;
+}
+
+.history-item {
+  display: flex; align-items: center;
+  gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.history-item:last-child { border-bottom: none; }
+
+.history-fmt {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+  padding: 2px 5px; border-radius: 3px; flex-shrink: 0;
+  line-height: 1.5;
+}
+.history-fmt.jpg {
+  background: var(--accent-dim); color: var(--accent);
+}
+.history-fmt.pdf {
+  background: var(--pdf-dim); color: var(--pdf-color);
+}
+
+.history-info { flex: 1; overflow: hidden; }
+.history-title {
+  font-size: 12px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.history-meta {
+  font-size: 10px; color: var(--text-muted); margin-top: 1px;
+}
+
+.history-open {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 14px;
+  padding: 2px 3px; border-radius: 3px; flex-shrink: 0;
+  line-height: 1; transition: color 0.12s;
+}
+.history-open:hover { color: var(--accent); }
+
+/* ── Toast ───────────────────────────────────────────────────────────── */
 .toast {
   position: absolute;
-  bottom: 42px;
-  left: 14px;
-  right: 14px;
+  bottom: 42px; left: 14px; right: 14px;
   padding: 8px 12px;
   border-radius: var(--radius-sm);
-  background: #222;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 500;
-  opacity: 0;
-  transform: translateY(6px);
+  background: #222; color: #fff;
+  font-size: 11px; font-weight: 500;
+  opacity: 0; transform: translateY(6px);
   transition: opacity 0.2s, transform 0.2s;
-  pointer-events: none;
-  z-index: 10;
+  pointer-events: none; z-index: 10;
 }
 html.dark .toast { background: #eee; color: #111; }
 .toast.show { opacity: 1; transform: translateY(0); }
 
 /* ── Подвал ─────────────────────────────────────────────────────────── */
 .footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: flex; justify-content: space-between; align-items: center;
   padding: 8px 14px;
   border-top: 1px solid var(--border);
 }
 .footer-brand {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-size: 10px; color: var(--text-muted);
+  font-weight: 600; letter-spacing: 0.5px;
 }
-.footer-keys {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
+.footer-keys { display: flex; gap: 6px; align-items: center; }
 .kbd {
-  display: inline-block;
-  font-size: 10px;
+  display: inline-block; font-size: 10px;
   padding: 1px 4px;
   border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--panel);
-  color: var(--text-muted);
-  line-height: 1.5;
+  border-radius: 3px; background: var(--panel);
+  color: var(--text-muted); line-height: 1.5;
 }
-.footer-key-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-}
+.footer-key-hint { font-size: 11px; color: var(--text-muted); }
 
 /* ── Spinner ─────────────────────────────────────────────────────────── */
 .spinner {
-  width: 11px;
-  height: 11px;
+  width: 11px; height: 11px;
   border: 2px solid rgba(255,255,255,0.35);
-  border-top-color: #fff;
-  border-radius: 50%;
+  border-top-color: #fff; border-radius: 50%;
   animation: spin 0.65s linear infinite;
-  flex-shrink: 0;
-  display: none;
+  flex-shrink: 0; display: none;
 }
 .btn-primary.searching .spinner { display: block; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -456,7 +454,7 @@ html.dark .toast { background: #eee; color: #111; }
   </span>
 </div>
 
-<!-- Слайдер диапазона страниц -->
+<!-- Слайдер диапазона -->
 <div class="range-section">
   <div class="range-row">
     <span class="range-label">Диапазон страниц</span>
@@ -476,21 +474,26 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
   <div class="range-hints">
     <span>стр. <strong id="hintFrom">1</strong></span>
-    <span id="hintToWrap">до <strong id="hintTo">конца</strong></span>
+    <span id="hintToWrap">до <strong>конца</strong></span>
   </div>
 </div>
 
 <div class="sep"></div>
 
-<!-- Кнопки -->
+<!-- Кнопки действий -->
 <div class="actions">
   <button id="btnAll" class="btn btn-primary">
     <span class="spinner" aria-hidden="true"></span>
     <span id="btnAllText">Скачать документ</span>
   </button>
-  <button id="btnCurrent" class="btn btn-secondary">
-    Скачать текущую страницу
-  </button>
+  <div class="btn-row">
+    <button id="btnCurrent" class="btn btn-secondary">
+      Текущую страницу
+    </button>
+    <button id="btnPDF" class="btn btn-pdf" title="Скачать PDF-файл">
+      <span class="pdf-badge">PDF</span>Скачать
+    </button>
+  </div>
 </div>
 
 <!-- Пауза / Стоп -->
@@ -524,12 +527,26 @@ html.dark .toast { background: #eee; color: #111; }
   <div class="summary-grid" id="summaryGrid"></div>
 </div>
 
+<!-- История загрузок -->
+<div class="history-section" id="historySection">
+  <button class="history-toggle" id="historyToggle" aria-expanded="false">
+    <span>Недавние загрузки</span>
+    <span class="history-toggle-right">
+      <span class="history-count" id="historyCount">0</span>
+      <span class="history-chevron" aria-hidden="true">▼</span>
+    </span>
+  </button>
+  <div class="history-list" id="historyList" role="list" aria-label="История загрузок">
+    <div class="history-empty" id="historyEmpty">Ещё нет загрузок</div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast" role="status" aria-live="assertive"></div>
 
 <!-- Подвал -->
 <div class="footer">
-  <span class="footer-brand">v2.1.1</span>
+  <span class="footer-brand">v2.2.0</span>
   <div class="footer-keys">
     <kbd class="kbd">Пробел</kbd><span class="footer-key-hint">пауза</span>
     <kbd class="kbd">Esc</kbd><span class="footer-key-hint">стоп</span>
