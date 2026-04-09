@@ -30,6 +30,9 @@ const historyToggle    = document.getElementById('historyToggle');
 const historyList      = document.getElementById('historyList');
 const historyCount     = document.getElementById('historyCount');
 const historyEmpty     = document.getElementById('historyEmpty');
+const actionsSection   = document.getElementById('actionsSection');
+const controlsSection  = document.getElementById('controlsSection');
+const progressSection  = document.getElementById('progressSection');
 
 // Заметки
 const notesSection = document.getElementById('notesSection');
@@ -129,6 +132,8 @@ function showSummary(kind, extra = {}) {
     .map(([k, v]) => `<div class="summary-item">${k}: <strong>${v}</strong></div>`)
     .join('');
 
+  summaryCard.classList.remove('visible');
+  void summaryCard.offsetHeight;
   summaryCard.classList.add('visible');
 }
 
@@ -138,8 +143,13 @@ function hideSummary() { summaryCard.classList.remove('visible'); }
 
 function setArchivePage(isArchive) {
   isArchivePage = isArchive;
+
+  // Баннер показывается только когда не архивная страница
   bannerNotArchive.classList.toggle('warn', !isArchive);
-  bannerNotArchive.style.display = isArchive ? 'none' : 'flex';
+  bannerNotArchive.style.display = isArchive ? 'none' : '';
+
+  actionsSection.classList.toggle('hidden', !isArchive);
+
   btnAll.disabled     = !isArchive || isRunning;
   btnCurrent.disabled = !isArchive || isRunning;
   btnPDF.disabled     = !isArchive || isRunning;
@@ -275,6 +285,20 @@ function setProgress(percent, current, total) {
   }
 }
 
+function completeProgressBar() {
+  return new Promise(resolve => {
+    progressBar.classList.remove('active');
+    progressBar.classList.add('completing');
+    progressBar.style.width = '100%';
+    progressPct.textContent = '100%';
+    // 600ms — длительность transition в CSS класса .completing
+    setTimeout(() => {
+      progressBar.classList.remove('completing');
+      resolve();
+    }, 620);
+  });
+}
+
 function setRunningUI(running, paused) {
   isRunning = running; isPaused = paused;
 
@@ -291,6 +315,9 @@ function setRunningUI(running, paused) {
   thumbStart.classList.toggle('disabled', running);
   thumbEnd.classList.toggle('disabled',   running);
 
+  controlsSection.classList.toggle('visible', running);
+  progressSection.classList.toggle('visible', running);
+
   if (!running) {
     downloadStartTime       = null;
     progressEta.textContent = '';
@@ -298,6 +325,7 @@ function setRunningUI(running, paused) {
     isPDFMode               = false;
     btnAllText.textContent  = 'Скачать документ';
     btnAll.classList.remove('searching');
+    progressBar.style.width = '0%';
   }
 }
 
@@ -320,19 +348,12 @@ function notesKey(unit) { return `yar_notes_${unit}`; }
 let notesSaveTimer = null;
 let notesSavedTimer = null;
 
-/**
- * Показывает индикатор «Сохранено» на 1.8 с, потом скрывает.
- */
 function flashNotesSaved() {
   notesSaved.classList.add('visible');
   if (notesSavedTimer) clearTimeout(notesSavedTimer);
   notesSavedTimer = setTimeout(() => notesSaved.classList.remove('visible'), 1800);
 }
 
-/**
- * Сохраняет текст заметки в chrome.storage.local с дебаунсом 800 мс.
- * Обновляет счётчик символов и индикатор точки немедленно.
- */
 function onNotesInput() {
   const text = notesArea.value;
   notesChars.textContent = `${text.length} / ${NOTES_MAX}`;
@@ -347,10 +368,6 @@ function onNotesInput() {
   }, 800);
 }
 
-/**
- * Загружает заметку для unit и подставляет в textarea.
- * Вызывается при инициализации попапа.
- */
 function loadNotes(unit) {
   if (!unit) return;
   chrome.storage.local.get({ [notesKey(unit)]: '' }, data => {
@@ -372,10 +389,6 @@ notesToggle.addEventListener('click', () => {
 
 // ── Экспорт метаданных ────────────────────────────────────────────────────────
 
-/**
- * Скачивает текстовый файл непосредственно из popup-контекста
- * через временный <a download>. Не требует прохода через background.js.
- */
 function downloadTextFile(filename, content, mimeType = 'text/plain') {
   const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
   const url  = URL.createObjectURL(blob);
@@ -388,10 +401,6 @@ function downloadTextFile(filename, content, mimeType = 'text/plain') {
 
 // ── Форматировщики ────────────────────────────────────────────────────────────
 
-/**
- * CSV: строки «Поле,Значение» — совместимо с Excel и Google Sheets.
- * Все значения экранируются двойными кавычками по RFC 4180.
- */
 function formatCSV(data) {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
@@ -416,9 +425,6 @@ function formatCSV(data) {
   return rows.map(r => r.join(',')).join('\r\n');
 }
 
-/**
- * JSON: полный объект с отступами, кодировка UTF-8.
- */
 function formatJSON(data) {
   return JSON.stringify(
     {
@@ -435,23 +441,15 @@ function formatJSON(data) {
   );
 }
 
-/**
- * BibTeX: запись типа @misc, подходит для Zotero, BibDesk, LaTeX.
- *
- * Ключ:  yar_<unitId>_<год>
- * Поля:  title, institution, year, month, url, note (реквизиты дела),
- *        howpublished (ссылка на архив)
- */
 function formatBibTeX(data) {
   const d    = new Date(data.accessedAt);
   const year = isNaN(d) ? new Date().getFullYear() : d.getFullYear();
   const mon  = isNaN(d) ? '' : d.toLocaleString('en', { month: 'long' }).toLowerCase();
   const key  = `yar_${data.unitId || 'unknown'}_${year}`;
 
-  // Экранирование для BibTeX: фигурные скобки и обратный слэш
   const bib  = v => String(v ?? '').replace(/[\\{}]/g, m => `\\${m}`);
   const note = Object.entries(data.fields || {})
-    .slice(0, 10)                           // не перегружаем поле note
+    .slice(0, 10)
     .map(([k, v]) => `${k}: ${v}`)
     .join('; ');
 
@@ -472,7 +470,6 @@ function formatBibTeX(data) {
   return lines.join('\n');
 }
 
-/** «15.07.2024» из ISO-строки */
 function formatDateRu(iso) {
   try {
     return new Date(iso).toLocaleDateString('ru-RU', {
@@ -481,10 +478,6 @@ function formatDateRu(iso) {
   } catch { return iso || ''; }
 }
 
-/**
- * Запрашивает метаданные из content-script и вызывает колбэк с объектом данных.
- * Показывает toast при ошибке.
- */
 function fetchMetaAndExport(callback) {
   sendToActiveTab({ type: 'GET_METADATA' }, response => {
     if (chrome.runtime.lastError || !response) {
@@ -561,14 +554,13 @@ function renderHistory(entries) {
 
     const fmt   = (entry.format || 'jpg').toLowerCase();
     const title = entry.title || `Документ ${entry.unit}`;
-    const short = title.length > 32 ? title.slice(0, 30) + '…' : title;
     const time  = relativeTime(entry.savedAt || entry.timestamp || 0);
     const pages = entry.pages ? `${entry.pages} стр.` : '';
 
     item.innerHTML = `
       <span class="history-fmt ${fmt}">${fmt.toUpperCase()}</span>
       <div class="history-info">
-        <div class="history-title" title="${title.replace(/"/g, '&quot;')}">${short}</div>
+        <div class="history-title" title="${title.replace(/"/g, '&quot;')}">${title}</div>
         <div class="history-meta">${[pages, time].filter(Boolean).join(' · ')}</div>
       </div>
       <button class="history-open" title="Открыть документ в новой вкладке" aria-label="Открыть документ">↗</button>
@@ -687,7 +679,7 @@ if (bannerArchivesLink) {
 
 document.addEventListener('keydown', e => {
   if (e.target === thumbStart || e.target === thumbEnd) return;
-  if (e.target === notesArea) return; // не перехватываем пробел в textarea
+  if (e.target === notesArea) return;
 
   if (e.code === 'Space' && isRunning) {
     e.preventDefault(); btnPause.click();
@@ -733,18 +725,10 @@ chrome.runtime.onMessage.addListener(msg => {
       const isPDF     = !!msg.isPDF;
 
       setStatus(text);
-      setProgress(
-        isStopped ? (downloadedPages / (totalPages || 1) * 100) : 100,
-        downloadedPages, totalPages
-      );
-      setRunningUI(false, false);
 
-      if (downloadedPages > 0 || isPDF) {
-        showSummary(
-          isStopped ? 'stopped' : isError ? 'error' : isPDF ? 'pdf' : 'done',
-          { failedCount: msg.failedCount ?? 0 }
-        );
-      }
+      const finalPercent = isStopped
+        ? (downloadedPages / (totalPages || 1) * 100)
+        : 100;
 
       const toastMsg = isError
         ? `Ошибка: ${text.replace(/^(Ошибка|PDF: ошибка)[: ]*/, '')}`
@@ -756,7 +740,23 @@ chrome.runtime.onMessage.addListener(msg => {
               ? `Готово — ${text.replace('Готово: ', '')} • пропущено: ${msg.failedCount}`
               : `Готово — ${text.replace('Готово: ', '')}`;
 
-      showToast(toastMsg, isError ? 3500 : 2500);
+      if (!isStopped && !isError && (downloadedPages > 0 || isPDF)) {
+        completeProgressBar().then(() => {
+          setRunningUI(false, false);
+          showSummary(isPDF ? 'pdf' : 'done', { failedCount: msg.failedCount ?? 0 });
+          showToast(toastMsg, 2500);
+        });
+      } else {
+        setProgress(finalPercent, downloadedPages, totalPages);
+        setRunningUI(false, false);
+        if (downloadedPages > 0 || isPDF) {
+          showSummary(
+            isStopped ? 'stopped' : 'error',
+            { failedCount: msg.failedCount ?? 0 }
+          );
+        }
+        showToast(toastMsg, isError ? 3500 : 2500);
+      }
 
       if (historySection.classList.contains('open')) loadHistory();
       break;
