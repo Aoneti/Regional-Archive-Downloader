@@ -305,9 +305,7 @@ html.dark .btn-reset { border-color: #555555; }
         Расширение следит за ответами сервера. При ошибках
         <code>429</code>&hairsp;/&hairsp;<code>503</code> задержка увеличивается
         вдвое (до 8&nbsp;с); при стабильной работе плавно снижается обратно
-        к заданному значению. Задержка выше — базовый минимум, не максимум.<br>
-        <strong>Для PDF-режима</strong> адаптив работает полностью;
-        для JPG-режима — зонд-проверка каждые 20&nbsp;страниц.
+        к заданному значению.
       </div>
     </div>
   </div>
@@ -377,7 +375,6 @@ html.dark .btn-reset { border-color: #555555; }
 <div class="section">
   <span class="section-title">Тема интерфейса</span>
   <div class="theme-btns" role="radiogroup" aria-label="Выбор темы">
-    <!-- «Авто» активна по умолчанию — следует системной теме при первом запуске -->
     <button class="theme-btn active" id="themeAutoBtn" data-theme="auto" role="radio" aria-checked="true">
       <span class="dot"></span> Авто
     </button>
@@ -387,9 +384,6 @@ html.dark .btn-reset { border-color: #555555; }
     <button class="theme-btn" id="themeDarkBtn" data-theme="dark" role="radio" aria-checked="false">
       <span class="dot"></span> Тёмная
     </button>
-  </div>
-  <div class="hint" style="margin-top:10px">
-    «Авто» следует системной теме браузера (prefers-color-scheme).
   </div>
 </div>
 
