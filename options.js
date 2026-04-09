@@ -4,6 +4,7 @@ const DEFAULTS = {
   maxPages:            1500,
   startFromCurrent:    true,
   concurrentDownloads: 4,
+  adaptiveSpeed:       false,
   theme:               'auto'
 };
 
@@ -15,7 +16,7 @@ const LIMITS = {
 
 function $(id) { return document.getElementById(id); }
 
-// ── Тема ──
+// ── Тема ──────────────────────────────────────────────────────────────────────
 
 const mq = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -34,6 +35,7 @@ function applyTheme(theme) {
   });
 }
 
+// Реагируем на изменение системной темы только в режиме «Авто»
 mq.addEventListener('change', () => {
   const active = document.querySelector('.theme-btn.active');
   if (active?.dataset.theme === 'auto') applyTheme('auto');
@@ -43,7 +45,7 @@ $('themeAutoBtn') .addEventListener('click', () => applyTheme('auto'));
 $('themeLightBtn').addEventListener('click', () => applyTheme('light'));
 $('themeDarkBtn') .addEventListener('click', () => applyTheme('dark'));
 
-// ── Двусторонняя привязка слайдер ↔ число ──
+// ── Двусторонняя привязка слайдер ↔ число ────────────────────────────────────
 
 function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
   const slider  = $(sliderId);
@@ -71,7 +73,7 @@ bindSliderNumber('delaySlider',      'delayMs',             'delayVal',      'de
 bindSliderNumber('maxPagesSlider',   'maxPages',            'maxPagesVal',   'maxPages');
 bindSliderNumber('concurrentSlider', 'concurrentDownloads', 'concurrentVal', 'concurrentDownloads');
 
-// ── Пресеты задержки ──
+// ── Пресеты задержки ──────────────────────────────────────────────────────────
 
 function syncPresets(value) {
   document.querySelectorAll('.preset[data-target="delayMs"]').forEach(btn => {
@@ -88,7 +90,27 @@ document.querySelectorAll('.preset').forEach(btn => {
   });
 });
 
-// ── Аккордеон «Доступные архивы» ──
+// ── Адаптивная скорость — визуальная обратная связь ───────────────────────────
+
+function syncAdaptiveUI(enabled) {
+  const block = $('adaptiveBlock');
+  const note  = $('delayNote');
+  const slider = $('delaySlider');
+  const input  = $('delayMs');
+
+  block.classList.toggle('on', enabled);
+  note.style.display = enabled ? 'block' : 'none';
+
+  // Визуально приглушаем (но не блокируем — пользователь может менять минимум)
+  slider.classList.toggle('muted', enabled);
+  input.classList.toggle('muted', enabled);
+}
+
+$('adaptiveSpeed').addEventListener('change', function () {
+  syncAdaptiveUI(this.checked);
+});
+
+// ── Аккордеон «Доступные архивы» ─────────────────────────────────────────────
 
 const archivesToggle = $('archivesToggle');
 const archivesList   = $('archivesList');
@@ -101,12 +123,13 @@ if (archivesToggle && archivesList) {
   });
 }
 
-// ── Загрузка настроек ──
+// ── Загрузка настроек ─────────────────────────────────────────────────────────
 
 function load() {
   chrome.storage.sync.get(DEFAULTS, items => {
     $('createFolders').checked     = !!items.createFolders;
     $('startFromCurrent').checked  = !!items.startFromCurrent;
+    $('adaptiveSpeed').checked     = !!items.adaptiveSpeed;
     $('delayMs').value             = items.delayMs             ?? DEFAULTS.delayMs;
     $('maxPages').value            = items.maxPages            ?? DEFAULTS.maxPages;
     $('concurrentDownloads').value = items.concurrentDownloads ?? DEFAULTS.concurrentDownloads;
@@ -115,11 +138,15 @@ function load() {
       $(id).dispatchEvent(new Event('change'));
     });
 
+    // Тема: дефолт 'auto' — при первой установке следует системной теме
     applyTheme(items.theme || DEFAULTS.theme);
+
+    // Синхронизируем UI адаптивной скорости
+    syncAdaptiveUI(!!items.adaptiveSpeed);
   });
 }
 
-// ── Сохранение ──
+// ── Сохранение ────────────────────────────────────────────────────────────────
 
 function clampField(id, key) {
   const raw = parseInt($(id).value, 10);
@@ -149,6 +176,7 @@ function save() {
     maxPages,
     startFromCurrent:    !!$('startFromCurrent').checked,
     concurrentDownloads,
+    adaptiveSpeed:       !!$('adaptiveSpeed').checked,
     theme
   };
 
@@ -175,7 +203,7 @@ function resetDefaults() {
   });
 }
 
-// ── Сообщение обратной связи ──
+// ── Сообщение обратной связи ──────────────────────────────────────────────────
 
 function showMsg(text, kind = 'ok') {
   const el = $('msg');
@@ -185,7 +213,7 @@ function showMsg(text, kind = 'ok') {
   }, 2500);
 }
 
-// ── Инициализация ──
+// ── Инициализация ─────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
   load();

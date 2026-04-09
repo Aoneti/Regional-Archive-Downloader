@@ -41,7 +41,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Шапка ───────────────────────────────────────────────────────────── */
 .page-title {
   font-size: 17px; font-weight: 700;
   margin: 0 0 20px; letter-spacing: -0.3px;
@@ -60,7 +59,6 @@ body {
   color: var(--muted); margin-bottom: 12px;
 }
 
-/* ── Строка с меткой ─────────────────────────────────────────────────── */
 .field { margin-bottom: 16px; }
 .field:last-child { margin-bottom: 0; }
 .field-label {
@@ -71,6 +69,12 @@ body {
 .field-value {
   font-size: 13px; font-weight: 700; color: var(--accent);
   font-variant-numeric: tabular-nums; min-width: 40px; text-align: right;
+}
+
+/* Подпись под значением задержки когда включён адаптив */
+.field-value-note {
+  font-size: 10px; font-weight: 400; color: var(--muted);
+  display: block; text-align: right; margin-top: 1px;
 }
 
 /* ── Slider ──────────────────────────────────────────────────────────── */
@@ -84,8 +88,7 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 14px; height: 14px; border-radius: 50%;
-  background: var(--accent);
-  border: 2.5px solid var(--bg);
+  background: var(--accent); border: 2.5px solid var(--bg);
   box-shadow: 0 0 0 1.5px var(--accent);
   cursor: grab; transition: transform 0.1s;
 }
@@ -93,6 +96,9 @@ input[type="range"]::-webkit-slider-thumb:active { cursor: grabbing; transform: 
 input[type="range"]:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent);
 }
+/* Слайдер заблокирован при adaptiveSpeed */
+input[type="range"].muted { opacity: 0.45; pointer-events: none; }
+input[type="number"].mini.muted { opacity: 0.45; pointer-events: none; }
 
 input[type="number"].mini {
   width: 68px; padding: 5px 7px;
@@ -102,14 +108,14 @@ input[type="number"].mini {
   font-family: inherit; font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: center; flex-shrink: 0;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, opacity 0.15s;
 }
 input[type="number"].mini:focus {
   outline: 2px solid var(--accent); outline-offset: 1px;
   border-color: var(--accent);
 }
 
-/* ── Чипы пресетов ───────────────────────────────────────────────────── */
+/* ── Пресеты ─────────────────────────────────────────────────────────── */
 .presets { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
 .preset {
   padding: 3px 9px; border-radius: 12px;
@@ -119,9 +125,7 @@ input[type="number"].mini:focus {
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .preset:hover { border-color: var(--accent); color: var(--accent); }
-.preset.active {
-  background: var(--accent-dim); border-color: var(--accent); color: var(--accent);
-}
+.preset.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 
 /* ── Hint ────────────────────────────────────────────────────────────── */
 .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
@@ -130,11 +134,19 @@ code {
   background: var(--border); padding: 1px 4px; border-radius: 3px;
 }
 
-/* ── Toggle строка (checkbox) ────────────────────────────────────────── */
-.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+/* ── Разделитель внутри секции ───────────────────────────────────────── */
+.section-sep {
+  height: 1px; background: var(--border);
+  margin: 14px 0;
+}
+
+/* ── Toggle ──────────────────────────────────────────────────────────── */
+.toggle-row {
+  display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px;
+}
 .toggle-row:last-child { margin-bottom: 0; }
 .toggle-checkbox {
-  position: relative; width: 30px; height: 17px; flex-shrink: 0;
+  position: relative; width: 30px; height: 17px; flex-shrink: 0; margin-top: 1px;
 }
 .toggle-checkbox input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-track {
@@ -154,7 +166,20 @@ code {
 }
 .toggle-label { font-size: 13px; cursor: pointer; line-height: 1.4; }
 
-/* ── Тема: три кнопки ────────────────────────────────────────────────── */
+/* Блок адаптивной скорости — выделен рамкой когда активен */
+.adaptive-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.adaptive-block.on {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.adaptive-block .hint { margin-top: 4px; }
+
+/* ── Тема ────────────────────────────────────────────────────────────── */
 .theme-btns {
   display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
 }
@@ -168,12 +193,10 @@ code {
   transition: border-color 0.13s, color 0.13s, background 0.13s;
 }
 .theme-btn:hover { border-color: var(--accent); color: var(--accent); }
-.theme-btn.active {
-  border-color: var(--accent); background: var(--accent-dim); color: var(--accent);
-}
+.theme-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
 .theme-btn .dot {
-  width: 10px; height: 10px;
-  border-radius: 50%; border: 1.5px solid currentColor; flex-shrink: 0;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid currentColor; flex-shrink: 0;
 }
 .theme-btn.active .dot {
   background: var(--accent);
@@ -197,8 +220,7 @@ code {
 .btn-reset:hover { background: var(--panel); }
 html.dark .btn-reset { border-color: #555555; }
 
-/* ── Сообщение обратной связи ────────────────────────────────────────── */
-.msg { font-size: 12px; margin-left: 2px; align-self: center; transition: opacity 0.2s; }
+.msg { font-size: 12px; margin-left: 2px; align-self: center; }
 .msg--ok    { color: var(--accent); }
 .msg--error { color: var(--danger); font-weight: 600; }
 
@@ -236,13 +258,18 @@ html.dark .btn-reset { border-color: #555555; }
 
 <h1 class="page-title">Настройки YARchive Downloader</h1>
 
-<!-- Задержка -->
+<!-- Скорость загрузки -->
 <div class="section">
   <span class="section-title">Скорость загрузки</span>
+
+  <!-- Задержка -->
   <div class="field">
     <div class="field-label">
       <span class="field-name">Задержка между файлами</span>
-      <span class="field-value"><span id="delayVal">250</span> мс</span>
+      <span>
+        <span class="field-value"><span id="delayVal">250</span> мс</span>
+        <span class="field-value-note" id="delayNote" style="display:none">базовый минимум</span>
+      </span>
     </div>
     <div class="slider-wrap">
       <input type="range" id="delaySlider" min="0" max="3000" step="50" value="250"
@@ -258,6 +285,31 @@ html.dark .btn-reset { border-color: #555555; }
       <button class="preset" data-target="delayMs" data-value="1200">🌿 Вежливо</button>
     </div>
     <div class="hint">Время ожидания между отправкой загрузок. Меньше — быстрее, но больше нагрузка на сервер архива.</div>
+  </div>
+
+  <div class="section-sep"></div>
+
+  <!-- Адаптивная скорость -->
+  <div class="field" style="margin-bottom:0">
+    <div class="adaptive-block" id="adaptiveBlock">
+      <div class="toggle-row" style="margin-bottom:0">
+        <label class="toggle-checkbox">
+          <input type="checkbox" id="adaptiveSpeed">
+          <span class="toggle-track"></span>
+        </label>
+        <label class="toggle-label" for="adaptiveSpeed" style="font-weight:500">
+          Авто — адаптивная скорость
+        </label>
+      </div>
+      <div class="hint" style="margin-top:8px">
+        Расширение следит за ответами сервера. При ошибках
+        <code>429</code>&hairsp;/&hairsp;<code>503</code> задержка увеличивается
+        вдвое (до 8&nbsp;с); при стабильной работе плавно снижается обратно
+        к заданному значению. Задержка выше — базовый минимум, не максимум.<br>
+        <strong>Для PDF-режима</strong> адаптив работает полностью;
+        для JPG-режима — зонд-проверка каждые 20&nbsp;страниц.
+      </div>
+    </div>
   </div>
 </div>
 
@@ -314,7 +366,8 @@ html.dark .btn-reset { border-color: #555555; }
     <label class="toggle-label" for="createFolders">
       Создавать папки для каждого документа
       <div class="hint" style="margin-top:2px">
-        Если выключено — файлы сохраняются в корень загрузок как <code>unit_ID_pNNN.jpg</code>
+        Если выключено — файлы сохраняются в корень загрузок как
+        <code>unit_ID_pNNN.jpg</code>
       </div>
     </label>
   </div>
@@ -324,15 +377,19 @@ html.dark .btn-reset { border-color: #555555; }
 <div class="section">
   <span class="section-title">Тема интерфейса</span>
   <div class="theme-btns" role="radiogroup" aria-label="Выбор темы">
-    <button class="theme-btn" id="themeAutoBtn" data-theme="auto" role="radio" aria-checked="false">
-      <span class="dot"></span> Как в системе
+    <!-- «Авто» активна по умолчанию — следует системной теме при первом запуске -->
+    <button class="theme-btn active" id="themeAutoBtn" data-theme="auto" role="radio" aria-checked="true">
+      <span class="dot"></span> Авто
     </button>
-    <button class="theme-btn active" id="themeLightBtn" data-theme="light" role="radio" aria-checked="true">
+    <button class="theme-btn" id="themeLightBtn" data-theme="light" role="radio" aria-checked="false">
       <span class="dot"></span> Светлая
     </button>
     <button class="theme-btn" id="themeDarkBtn" data-theme="dark" role="radio" aria-checked="false">
       <span class="dot"></span> Тёмная
     </button>
+  </div>
+  <div class="hint" style="margin-top:10px">
+    «Авто» следует системной теме браузера (prefers-color-scheme).
   </div>
 </div>
 
