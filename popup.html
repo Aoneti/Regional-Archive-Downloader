@@ -19,8 +19,8 @@
   --warn-bg:        #fffbeb;
   --warn-border:    #f8d861;
   --warn-text:      #7a5c00;
-  --success-bg:     #fff5ee;
-  --success-border: #F46A15;
+  --success-bg:     #f6fff0;
+  --success-border: #a8d96a;
   --pdf-color:      #D0021B;
   --pdf-dim:        rgba(208,2,27,0.10);
   --radius-sm:      6px;
@@ -39,8 +39,8 @@ html.dark {
   --warn-bg:        #1f1a06;
   --warn-border:    #7a6200;
   --warn-text:      #f8d06a;
-  --success-bg:     #1f1005;
-  --success-border: #7a3510;
+  --success-bg:     #121a08;
+  --success-border: #4a7a18;
   --pdf-color:      #ff6b7a;
   --pdf-dim:        rgba(255,107,122,0.12);
 }
@@ -65,7 +65,6 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
-  box-shadow: 0 1px 0 var(--border);
 }
 .header-title { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; }
 .header-gear {
@@ -76,66 +75,51 @@ body {
 }
 .header-gear:hover { color: var(--text); background: var(--panel); }
 
-/* ── Баннер ───────────────────────────────────────────────────────────
-   CHANGE 3: Баннер как единственный фокус при не-архивной странице.
-   Скрыт по умолчанию; при warn показывается как полноценный экран-подсказка.
-────────────────────────────────────────────────────────────────────── */
-.banner {
-  display: none;
+/* ── Toast (перенесён наверх — не перекрывает footer и контент) ──────── */
+.toast {
+  position: absolute; top: 45px; left: 14px; right: 14px;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  background: #222; color: #fff; font-size: 11px; font-weight: 500;
+  opacity: 0; transform: translateY(-4px);
+  transition: opacity 0.2s, transform 0.2s; pointer-events: none; z-index: 20;
 }
+html.dark .toast { background: #eee; color: #111; }
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* ── Баннер «не архивная страница» ───────────────────────────────────
+   Упрощён: только сообщение + кнопка настроек.
+   Список архивов живёт в настройках — масштабируется без правок попапа.
+   Когда активен — скрыты actions, sep, range, все аккордеоны.
+────────────────────────────────────────────────────────────────────── */
+.banner { display: none; }
 .banner.warn {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  display: flex; flex-direction: column;
+  padding: 20px 14px 16px; gap: 12px;
   background: var(--warn-bg);
   border-bottom: 1px solid var(--warn-border);
 }
-.banner-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px 14px 10px;
-}
-.banner-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.banner-main { display: flex; align-items: flex-start; gap: 10px; }
+.banner-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
 .banner-body { flex: 1; }
 .banner-title {
-  font-size: 12px; font-weight: 700;
-  color: var(--warn-text); line-height: 1.3; margin-bottom: 3px;
+  font-size: 13px; font-weight: 700;
+  color: var(--warn-text); line-height: 1.3; margin-bottom: 4px;
 }
-.banner-text { font-size: 11px; color: var(--warn-text); line-height: 1.5; opacity: 0.85; }
-.banner-archives {
-  padding: 0 14px 12px 14px;
-  border-top: 1px solid var(--warn-border);
-  margin-top: 4px;
-  padding-top: 10px;
+.banner-text {
+  font-size: 11px; color: var(--warn-text); line-height: 1.55; opacity: 0.8;
 }
-.banner-archives-label {
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.5px; color: var(--warn-text); opacity: 0.6;
-  margin-bottom: 6px;
-}
-.banner-archive-list {
-  display: flex; flex-direction: column; gap: 3px;
-}
-.banner-archive-link {
-  font-size: 11px; color: var(--warn-text); font-weight: 600;
-  text-decoration: none; opacity: 0.9;
-  display: flex; align-items: center; gap: 4px;
-}
-.banner-archive-link:hover { opacity: 1; text-decoration: underline; }
 .banner-settings-btn {
   display: flex; align-items: center; justify-content: center;
-  gap: 6px; width: 100%; margin-top: 10px; padding: 7px 12px;
-  background: transparent; border: 1px solid var(--warn-border);
-  border-radius: var(--radius-sm); color: var(--warn-text);
-  font-size: 11px; font-weight: 600; font-family: inherit;
-  cursor: pointer; transition: background 0.13s;
+  gap: 6px; width: 100%; padding: 8px 12px;
+  background: var(--warn-text); border: none;
+  border-radius: var(--radius-sm); color: var(--warn-bg);
+  font-size: 12px; font-weight: 700; font-family: inherit;
+  cursor: pointer; transition: opacity 0.13s; letter-spacing: 0.1px;
 }
-.banner-settings-btn:hover { background: rgba(0,0,0,0.05); }
+.banner-settings-btn:hover { opacity: 0.88; }
 
-/* ── Кнопки действий (CHANGE 1: перемещены выше слайдера) ──────────── */
+/* ── Кнопки действий ────────────────────────────────────────────────── */
 .actions { padding: 12px 14px 8px; }
-/* CHANGE 3: скрываем actions когда не архивная страница */
 .actions.hidden { display: none; }
 
 .btn {
@@ -143,46 +127,61 @@ body {
   gap: 7px; width: 100%; padding: 9px 12px;
   border-radius: var(--radius-md); border: 1px solid transparent;
   cursor: pointer; font-size: 13px; font-family: inherit; font-weight: 600; line-height: 1;
-  transition: background 0.13s, border-color 0.13s, opacity 0.13s;
+  transition: background 0.13s, border-color 0.13s, opacity 0.13s, box-shadow 0.13s;
 }
+
+/* Primary — единственный явный CTA */
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 
-/* Searching state: subtle visual feedback that something is happening */
+/* Searching: вся кнопка сигнализирует «жди» через glow + приглушение */
 .btn-primary.searching {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
-.btn-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 4px; }
+.btn-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 6px; }
+
+/* Secondary — ghost, не конкурирует с primary */
 .btn-secondary {
   background: transparent; border: 1px solid var(--border);
   color: var(--text-muted); font-weight: 500; font-size: 12px;
   padding: 6px 12px; border-radius: var(--radius-sm);
   transition: border-color 0.13s, color 0.13s, background 0.13s;
 }
-.btn-secondary:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+.btn-secondary:hover:not(:disabled) {
+  color: var(--text); border-color: var(--text-muted); background: var(--panel);
+}
 
+/* PDF — ghost, тихий */
 .btn-pdf {
   background: transparent; border: 1px solid var(--border);
-  color: var(--pdf-color); font-weight: 600; font-size: 12px;
+  color: var(--text-muted); font-weight: 500; font-size: 12px;
   padding: 6px 10px; border-radius: var(--radius-sm); white-space: nowrap;
-  transition: border-color 0.13s, background 0.13s;
+  transition: border-color 0.13s, color 0.13s, background 0.13s;
   display: flex; align-items: center; gap: 5px;
 }
-.btn-pdf:hover:not(:disabled) { border-color: var(--pdf-color); background: var(--pdf-dim); }
+.btn-pdf:hover:not(:disabled) {
+  border-color: var(--pdf-color); color: var(--pdf-color); background: var(--pdf-dim);
+}
 .btn-pdf .pdf-badge {
   font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
   background: var(--pdf-color); color: #fff;
   padding: 1px 4px; border-radius: 3px; line-height: 1.4;
+  opacity: 0.65; transition: opacity 0.13s;
 }
-.btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.btn-pdf:hover:not(:disabled) .pdf-badge { opacity: 1; }
+
+.btn:disabled { opacity: 0.38; cursor: not-allowed; }
 
 /* ── Разделитель ─────────────────────────────────────────────────────── */
 .sep { height: 1px; background: var(--border); }
+.sep.hidden { display: none; }
 
-/* ── Слайдер диапазона (CHANGE 1: перемещён ниже кнопок) ────────────── */
-.range-section { padding: 10px 14px 8px; }
+/* ── Слайдер диапазона ───────────────────────────────────────────────── */
+.range-section { padding: 10px 14px 10px; }
+.range-section.hidden { display: none; }
 .range-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
 .range-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.4px; }
 .range-wrap {
@@ -194,42 +193,34 @@ body {
 .range-fill {
   position: absolute; top: 0; height: 100%;
   background: var(--accent); border-radius: 2px; pointer-events: none;
-  transition: left 0.05s, width 0.05s;
 }
 .range-thumb {
   position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%;
   background: var(--accent); border: 2.5px solid var(--bg);
   box-shadow: 0 0 0 1.5px var(--accent);
   transform: translate(-50%, -50%); cursor: grab; z-index: 3; touch-action: none;
-  transition: transform 0.1s, box-shadow 0.1s, left 0.05s;
+  transition: transform 0.1s, box-shadow 0.1s;
 }
 .range-thumb:hover { transform: translate(-50%, -50%) scale(1.18); box-shadow: 0 0 0 4px var(--accent-dim); }
 .range-thumb:active { cursor: grabbing; }
-.range-thumb.dragging { transform: translate(-50%, -50%) scale(1.28); box-shadow: 0 0 0 6px var(--accent-dim); transition: transform 0.1s, box-shadow 0.1s; }
+.range-thumb.dragging { transform: translate(-50%, -50%) scale(1.28); box-shadow: 0 0 0 6px var(--accent-dim); }
 .range-thumb:focus-visible { outline: none; box-shadow: 0 0 0 4px var(--accent-dim), 0 0 0 1.5px var(--accent); }
 .range-thumb.disabled { cursor: not-allowed; opacity: 0.4; pointer-events: none; }
 .range-hints { display: flex; justify-content: space-between; padding: 0 7px; font-size: 10px; color: var(--text-muted); }
 .range-hints strong { color: var(--text); font-weight: 600; }
 
-/* ── Управление (CHANGE 2: скрыто в idle) ────────────────────────────
-   По умолчанию display:none. Появляется с анимацией при isRunning.
-────────────────────────────────────────────────────────────────────── */
+/* ── Управление (скрыто в idle) ──────────────────────────────────────── */
 @keyframes controlsReveal {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
 .controls {
-  display: none; /* hidden in idle */
+  display: none;
   grid-template-columns: 1fr 1fr;
-  gap: 6px; padding: 0 14px 12px;
-  border-top: 1px solid var(--border); padding-top: 8px;
+  gap: 6px; padding: 8px 14px 12px;
+  border-top: 1px solid var(--border);
 }
-.controls.visible {
-  display: grid;
-  animation: controlsReveal 0.18s ease;
-}
-
+.controls.visible { display: grid; animation: controlsReveal 0.18s ease; }
 .btn-ctrl {
   display: flex; align-items: center; justify-content: center;
   gap: 5px; padding: 7px 8px; border-radius: var(--radius-sm);
@@ -242,23 +233,13 @@ body {
 .btn-ctrl.danger:hover:not(:disabled) { background: var(--danger-hover); border-color: var(--danger-hover); }
 .btn-ctrl:disabled { opacity: 0.38; cursor: not-allowed; }
 
-/* ── Прогресс (CHANGE 2: скрыт в idle) ──────────────────────────────
-   По умолчанию display:none. Появляется с анимацией при isRunning.
-────────────────────────────────────────────────────────────────────── */
+/* ── Прогресс (скрыт в idle) ─────────────────────────────────────────── */
 @keyframes progressReveal {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
-.progress-section {
-  display: none; /* hidden in idle */
-  padding: 0 14px 12px;
-}
-.progress-section.visible {
-  display: block;
-  animation: progressReveal 0.2s ease;
-}
-
+.progress-section { display: none; padding: 0 14px 12px; }
+.progress-section.visible { display: block; animation: progressReveal 0.2s ease; }
 .progress-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
 .progress-bar {
   height: 100%; width: 0%; background: var(--accent);
@@ -270,65 +251,58 @@ body {
   background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
   animation: shimmer 1.4s linear infinite;
 }
-/* CHANGE 4: плавное завершение — специальный transition для финального состояния */
-.progress-bar.completing {
-  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
+.progress-bar.completing { transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
 @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(210%); } }
 .progress-meta { display: flex; justify-content: space-between; align-items: flex-start; }
 .progress-status { font-size: 11px; color: var(--text); line-height: 1.45; flex: 1; min-height: 1.45em; }
 .progress-pct { font-size: 11px; font-weight: 700; color: var(--accent); flex-shrink: 0; margin-left: 6px; font-variant-numeric: tabular-nums; }
 .progress-eta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-/* ── Итоговая карточка (CHANGE 4: анимированное появление) ──────────
-   Вместо резкого display:block — плавный fade + slide вверх.
-   Момент завершения становится "reward moment".
-────────────────────────────────────────────────────────────────────── */
+/* ── Итоговая карточка (анимированное появление) ─────────────────────── */
 @keyframes summaryAppear {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-
 .summary-card {
   display: none; margin: 0 14px 12px; padding: 10px 12px;
   background: var(--success-bg); border: 1px solid var(--success-border);
   border-radius: var(--radius-md);
 }
-.summary-card.visible {
-  display: block;
-  animation: summaryAppear 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.summary-title { font-weight: 700; color: var(--accent); margin-bottom: 6px; font-size: 12px; }
-.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
-.summary-item { color: var(--text-muted); font-size: 11px; }
-.summary-item strong { color: var(--text); font-weight: 600; }
+.summary-card.visible { display: block; animation: summaryAppear 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+.summary-title { font-weight: 700; color: var(--accent); margin-bottom: 8px; font-size: 12px; }
+/* Definition-list: ключ muted слева, значение bold справа */
+.summary-list { display: flex; flex-direction: column; gap: 3px; }
+.summary-item { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; }
+.summary-key { color: var(--text-muted); flex-shrink: 0; margin-right: 8px; }
+.summary-val { color: var(--text); font-weight: 600; text-align: right; }
 
-/* ── Заметки ─────────────────────────────────────────────────────────── */
-.notes-section { border-top: 1px solid var(--border); }
-.notes-toggle {
+/* ── Аккордеоны — единый унифицированный стиль ───────────────────────
+   Notes / Export / History используют одни и те же классы.
+────────────────────────────────────────────────────────────────────── */
+.accordion { border-top: 1px solid var(--border); }
+.accordion.hidden { display: none; }
+
+.accordion-toggle {
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 14px; background: none; border: none; width: 100%;
   cursor: pointer; color: var(--text-muted);
   font-size: 11px; font-family: inherit; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.4px; transition: color 0.12s;
 }
-.notes-toggle:hover { color: var(--text); }
-.notes-toggle-right { display: flex; align-items: center; gap: 6px; }
+.accordion-toggle:hover { color: var(--text); }
+.accordion-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 3px; }
+.accordion-right { display: flex; align-items: center; gap: 6px; }
+.accordion-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; display: inline-block; }
+.accordion.open .accordion-chevron { transform: rotate(180deg); }
+.accordion-body { display: none; padding: 0 14px 12px; }
+.accordion.open .accordion-body { display: block; }
+
+/* Заметки — специфичные элементы */
 .notes-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--accent); flex-shrink: 0; opacity: 0; transition: opacity 0.2s;
 }
 .notes-dot.visible { opacity: 1; }
-.notes-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; display: inline-block; }
-.notes-section.open .notes-chevron { transform: rotate(180deg); }
-.notes-body { display: none; padding: 0 14px 12px; }
-.notes-section.open .notes-body { display: block; }
 .notes-area {
   width: 100%; resize: vertical; min-height: 72px; max-height: 200px;
   padding: 8px 10px; border-radius: var(--radius-sm);
@@ -344,21 +318,31 @@ body {
 .notes-saved.visible { opacity: 1; }
 .notes-chars { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-/* ── Экспорт метаданных ──────────────────────────────────────────────── */
-.export-section { border-top: 1px solid var(--border); }
-.export-toggle {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 9px 14px; background: none; border: none; width: 100%;
-  cursor: pointer; color: var(--text-muted);
-  font-size: 11px; font-family: inherit; font-weight: 500;
-  text-transform: uppercase; letter-spacing: 0.4px; transition: color 0.12s;
+/* История — специфичные элементы */
+.history-count {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  font-size: 10px; font-weight: 600; padding: 1px 6px; color: var(--text-muted);
+  min-width: 20px; text-align: center;
 }
-.export-toggle:hover { color: var(--text); }
-.export-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; display: inline-block; }
-.export-section.open .export-chevron { transform: rotate(180deg); }
-.export-body { display: none; padding: 0 14px 12px; }
-.export-section.open .export-body { display: block; }
-.export-hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; margin-bottom: 8px; }
+.history-empty { font-size: 11px; color: var(--text-muted); text-align: center; padding: 6px 0 2px; }
+.history-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.history-item:last-child { border-bottom: none; }
+.history-fmt { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; padding: 2px 5px; border-radius: 3px; flex-shrink: 0; line-height: 1.5; }
+.history-fmt.jpg { background: var(--accent-dim); color: var(--accent); }
+.history-fmt.pdf { background: var(--pdf-dim); color: var(--pdf-color); }
+.history-info { flex: 1; overflow: hidden; }
+.history-title { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.history-meta { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+/* Кнопка открыть — с hover-рамкой, ощущается как action */
+.history-open {
+  background: none; border: 1px solid transparent; cursor: pointer;
+  color: var(--text-muted); font-size: 14px; padding: 3px 6px;
+  border-radius: var(--radius-sm); flex-shrink: 0; line-height: 1;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.history-open:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+
+/* Экспорт — специфичные элементы */
 .export-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 .btn-export {
   padding: 7px 0; border-radius: var(--radius-sm);
@@ -370,66 +354,15 @@ body {
 .btn-export:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 .btn-export:disabled { opacity: 0.38; cursor: not-allowed; }
 
-/* ── История загрузок ────────────────────────────────────────────────── */
-.history-section { border-top: 1px solid var(--border); }
-.history-toggle {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 9px 14px; background: none; border: none; width: 100%;
-  cursor: pointer; color: var(--text-muted);
-  font-size: 11px; font-family: inherit; font-weight: 500;
-  text-transform: uppercase; letter-spacing: 0.4px; transition: color 0.12s;
-}
-.history-toggle:hover { color: var(--text); }
-.history-toggle-right { display: flex; align-items: center; gap: 6px; }
-.history-count {
-  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-  font-size: 10px; font-weight: 600; padding: 1px 6px; color: var(--text-muted);
-  min-width: 20px; text-align: center;
-}
-.history-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; display: inline-block; }
-.history-section.open .history-chevron { transform: rotate(180deg); }
-.history-list { display: none; padding: 0 14px 10px; }
-.history-section.open .history-list { display: block; }
-.history-empty { font-size: 11px; color: var(--text-muted); text-align: center; padding: 8px 0 4px; }
-.history-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.history-item:last-child { border-bottom: none; }
-.history-fmt { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; padding: 2px 5px; border-radius: 3px; flex-shrink: 0; line-height: 1.5; }
-.history-fmt.jpg { background: var(--accent-dim); color: var(--accent); }
-.history-fmt.pdf { background: var(--pdf-dim); color: var(--pdf-color); }
-.history-info { flex: 1; overflow: hidden; }
-.history-title { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-.history-meta { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
-.history-open {
-  background: none; border: 1px solid transparent; cursor: pointer;
-  color: var(--text-muted); font-size: 14px; padding: 2px 5px;
-  border-radius: 4px; flex-shrink: 0; line-height: 1;
-  transition: color 0.12s, border-color 0.12s;
-}
-.history-open:hover { color: var(--accent); border-color: var(--accent); }
-
-/* ── Toast ───────────────────────────────────────────────────────────── */
-.toast {
-  position: absolute; bottom: 42px; left: 14px; right: 14px;
-  padding: 8px 12px; border-radius: var(--radius-sm);
-  background: #222; color: #fff; font-size: 11px; font-weight: 500;
-  opacity: 0; transform: translateY(6px);
-  transition: opacity 0.2s, transform 0.2s; pointer-events: none; z-index: 10;
-}
-html.dark .toast { background: #eee; color: #111; }
-.toast.show { opacity: 1; transform: translateY(0); }
-
 /* ── Подвал ─────────────────────────────────────────────────────────── */
 .footer {
   display: flex; justify-content: space-between; align-items: center;
   padding: 8px 14px; border-top: 1px solid var(--border);
 }
-.footer-brand { font-size: 10px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.5px; opacity: 0.5; }
+/* Версия почти невидима — служебная информация, не для пользователя */
+.footer-brand { font-size: 10px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.3px; opacity: 0.28; }
 .footer-keys { display: flex; gap: 6px; align-items: center; }
-.kbd {
-  display: inline-block; font-size: 10px; padding: 1px 4px;
-  border: 1px solid var(--border); border-radius: 3px;
-  background: var(--panel); color: var(--text-muted); line-height: 1.5;
-}
+.kbd { display: inline-block; font-size: 10px; padding: 1px 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); color: var(--text-muted); line-height: 1.5; }
 .footer-key-hint { font-size: 11px; color: var(--text-muted); }
 
 /* ── Spinner ─────────────────────────────────────────────────────────── */
@@ -451,26 +384,29 @@ html.dark .toast { background: #eee; color: #111; }
   <button class="header-gear" id="openOptions" title="Настройки (Alt+S)" aria-label="Открыть настройки">⚙️</button>
 </div>
 
+<!-- Toast (наверху, не перекрывает footer) -->
+<div class="toast" id="toast" role="status" aria-live="assertive"></div>
+
+<!-- Баннер «не архивная страница»
+     Простой: сообщение + одна кнопка в настройки.
+     Когда активен — ниже показаны только footer (слайдер и аккордеоны скрыты). -->
 <div class="banner" id="bannerNotArchive" role="alert">
   <div class="banner-main">
     <span class="banner-icon">🗂️</span>
     <div class="banner-body">
       <div class="banner-title">Откройте документ в архиве</div>
-      <div class="banner-text">Перейдите на страницу просмотра документа на сайте поддерживаемого архива</div>
+      <div class="banner-text">
+        Перейдите на страницу просмотра документа на одном из поддерживаемых сайтов.
+        Список архивов — в настройках расширения.
+      </div>
     </div>
   </div>
-  <div class="banner-archives">
-    <div class="banner-archives-label">Поддерживаемые архивы</div>
-    <div class="banner-archive-list">
-      <a class="banner-archive-link" href="https://af.yar-archives.ru" target="_blank" rel="noopener">→ af.yar-archives.ru</a>
-      <a class="banner-archive-link" href="https://gosarchive.gov35.ru" target="_blank" rel="noopener">→ gosarchive.gov35.ru</a>
-      <a class="banner-archive-link" href="https://archives.permkrai.ru" target="_blank" rel="noopener">→ archives.permkrai.ru</a>
-      <a class="banner-archive-link" href="https://archivesaratov.ru" target="_blank" rel="noopener">→ archivesaratov.ru</a>
-    </div>
-    <button class="banner-settings-btn" id="bannerArchivesLink">⚙️ Настройки расширения</button>
-  </div>
+  <button class="banner-settings-btn" id="bannerSettingsBtn">
+    ⚙️ Открыть настройки
+  </button>
 </div>
 
+<!-- Кнопки действий (скрыты при не-архивной странице) -->
 <div class="actions" id="actionsSection">
   <button id="btnAll" class="btn btn-primary">
     <span class="spinner" aria-hidden="true"></span>
@@ -484,9 +420,11 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
-<div class="sep"></div>
+<!-- Разделитель (скрыт при не-архивной странице) -->
+<div class="sep" id="mainSep"></div>
 
-<div class="range-section">
+<!-- Слайдер диапазона (скрыт при не-архивной странице) -->
+<div class="range-section" id="rangeSection">
   <div class="range-row">
     <span class="range-label">Диапазон страниц</span>
   </div>
@@ -509,6 +447,7 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
+<!-- Управление (скрыто в idle) -->
 <div class="controls" id="controlsSection">
   <button id="btnPause" class="btn-ctrl" title="Пауза / Продолжить (Пробел)" disabled aria-label="Пауза">
     <span id="pauseIcon" aria-hidden="true">⏸</span>
@@ -519,8 +458,10 @@ html.dark .toast { background: #eee; color: #111; }
   </button>
 </div>
 
+<!-- Прогресс (скрыт в idle) -->
 <div class="progress-section" id="progressSection" role="status" aria-live="polite">
-  <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressRole">
+  <div class="progress-track" role="progressbar"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressRole">
     <div id="progressBar" class="progress-bar"></div>
   </div>
   <div class="progress-meta">
@@ -530,23 +471,25 @@ html.dark .toast { background: #eee; color: #111; }
   <div id="progressEta" class="progress-eta"></div>
 </div>
 
+<!-- Итоговая карточка -->
 <div class="summary-card" id="summaryCard" role="region" aria-label="Результат загрузки">
   <div class="summary-title" id="summaryTitle">Загрузка завершена</div>
-  <div class="summary-grid" id="summaryGrid"></div>
+  <div class="summary-list" id="summaryList"></div>
 </div>
 
-<!-- Заметки к делу -->
-<div class="notes-section" id="notesSection">
-  <button class="notes-toggle" id="notesToggle" aria-expanded="false" aria-controls="notesBody">
+<!-- Аккордеон: Заметки (скрыт при не-архивной странице) -->
+<div class="accordion" id="notesSection">
+  <button class="accordion-toggle" id="notesToggle"
+          aria-expanded="false" aria-controls="notesBody">
     <span>Заметки</span>
-    <span class="notes-toggle-right">
+    <span class="accordion-right">
       <span class="notes-dot" id="notesDot" aria-hidden="true"></span>
-      <span class="notes-chevron" aria-hidden="true">▼</span>
+      <span class="accordion-chevron" aria-hidden="true">▼</span>
     </span>
   </button>
-  <div class="notes-body" id="notesBody" role="region" aria-label="Заметки к документу">
+  <div class="accordion-body" id="notesBody" role="region" aria-label="Заметки к документу">
     <textarea class="notes-area" id="notesArea"
-      placeholder="Заметки: имена, даты, страницы…"
+      placeholder="Заметки по делу: имена, даты, страницы…"
       maxlength="4000" aria-label="Текст заметки"></textarea>
     <div class="notes-footer">
       <span class="notes-saved" id="notesSaved" aria-live="polite">Сохранено</span>
@@ -555,13 +498,16 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
-<!-- Экспорт метаданных -->
-<div class="export-section" id="exportSection">
-  <button class="export-toggle" id="exportToggle" aria-expanded="false" aria-controls="exportBody">
+<!-- Аккордеон: Экспорт метаданных (скрыт при не-архивной странице) -->
+<div class="accordion" id="exportSection">
+  <button class="accordion-toggle" id="exportToggle"
+          aria-expanded="false" aria-controls="exportBody">
     <span>Экспорт метаданных</span>
-    <span class="export-chevron" aria-hidden="true">▼</span>
+    <span class="accordion-right">
+      <span class="accordion-chevron" aria-hidden="true">▼</span>
+    </span>
   </button>
-  <div class="export-body" id="exportBody" role="region" aria-label="Экспорт метаданных документа">
+  <div class="accordion-body" id="exportBody" role="region" aria-label="Экспорт метаданных документа">
     <div class="export-btns" role="group" aria-label="Форматы экспорта">
       <button class="btn-export" id="exportCSV"    title="Таблица Excel/Numbers">CSV</button>
       <button class="btn-export" id="exportJSON"   title="Машиночитаемый формат">JSON</button>
@@ -570,26 +516,23 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
-<!-- История загрузок -->
-<div class="history-section" id="historySection">
-  <button class="history-toggle" id="historyToggle" aria-expanded="false">
+<!-- Аккордеон: История загрузок (скрыт при не-архивной странице) -->
+<div class="accordion" id="historySection">
+  <button class="accordion-toggle" id="historyToggle" aria-expanded="false">
     <span>Недавние загрузки</span>
-    <span class="history-toggle-right">
+    <span class="accordion-right">
       <span class="history-count" id="historyCount">0</span>
-      <span class="history-chevron" aria-hidden="true">▼</span>
+      <span class="accordion-chevron" aria-hidden="true">▼</span>
     </span>
   </button>
-  <div class="history-list" id="historyList" role="list" aria-label="История загрузок">
+  <div class="accordion-body" id="historyList" role="list" aria-label="История загрузок">
     <div class="history-empty" id="historyEmpty">Ещё нет загрузок</div>
   </div>
 </div>
 
-<!-- Toast -->
-<div class="toast" id="toast" role="status" aria-live="assertive"></div>
-
 <!-- Подвал -->
 <div class="footer">
-  <span class="footer-brand">v2.3.0</span>
+  <span class="footer-brand">v2.3.5</span>
   <div class="footer-keys">
     <kbd class="kbd">Пробел</kbd><span class="footer-key-hint">пауза</span>
     <kbd class="kbd">Esc</kbd><span class="footer-key-hint">стоп</span>

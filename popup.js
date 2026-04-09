@@ -12,7 +12,7 @@ const openOptions      = document.getElementById('openOptions');
 const bannerNotArchive = document.getElementById('bannerNotArchive');
 const summaryCard      = document.getElementById('summaryCard');
 const summaryTitle     = document.getElementById('summaryTitle');
-const summaryGrid      = document.getElementById('summaryGrid');
+const summaryList      = document.getElementById('summaryList');
 const toastEl          = document.getElementById('toast');
 const statusEl         = document.getElementById('status');
 const progressBar      = document.getElementById('progressBar');
@@ -25,31 +25,33 @@ const thumbStart       = document.getElementById('thumbStart');
 const thumbEnd         = document.getElementById('thumbEnd');
 const hintFrom         = document.getElementById('hintFrom');
 const hintToWrap       = document.getElementById('hintToWrap');
-const historySection   = document.getElementById('historySection');
-const historyToggle    = document.getElementById('historyToggle');
-const historyList      = document.getElementById('historyList');
-const historyCount     = document.getElementById('historyCount');
-const historyEmpty     = document.getElementById('historyEmpty');
 const actionsSection   = document.getElementById('actionsSection');
+const mainSep          = document.getElementById('mainSep');
+const rangeSection     = document.getElementById('rangeSection');
 const controlsSection  = document.getElementById('controlsSection');
 const progressSection  = document.getElementById('progressSection');
 
-// Заметки
-const notesSection = document.getElementById('notesSection');
-const notesToggle  = document.getElementById('notesToggle');
-const notesBody    = document.getElementById('notesBody');
-const notesArea    = document.getElementById('notesArea');
-const notesSaved   = document.getElementById('notesSaved');
-const notesChars   = document.getElementById('notesChars');
-const notesDot     = document.getElementById('notesDot');
+// Аккордеоны
+const notesSection  = document.getElementById('notesSection');
+const notesToggle   = document.getElementById('notesToggle');
+const notesBody     = document.getElementById('notesBody');
+const notesArea     = document.getElementById('notesArea');
+const notesSaved    = document.getElementById('notesSaved');
+const notesChars    = document.getElementById('notesChars');
+const notesDot      = document.getElementById('notesDot');
 
-// Экспорт
 const exportSection = document.getElementById('exportSection');
 const exportToggle  = document.getElementById('exportToggle');
 const exportBody    = document.getElementById('exportBody');
 const exportCSV     = document.getElementById('exportCSV');
 const exportJSON    = document.getElementById('exportJSON');
 const exportBibTeX  = document.getElementById('exportBibTeX');
+
+const historySection = document.getElementById('historySection');
+const historyToggle  = document.getElementById('historyToggle');
+const historyList    = document.getElementById('historyList');
+const historyCount   = document.getElementById('historyCount');
+const historyEmpty   = document.getElementById('historyEmpty');
 
 // ── Состояние ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +60,7 @@ let isPaused      = false;
 let isArchivePage = false;
 let isPDFMode     = false;
 
-let rangeMax  = 1500;
+let rangeMax    = 1500;
 const RANGE_MIN = 1;
 
 let fromPage = 1;
@@ -68,7 +70,6 @@ let downloadStartTime = null;
 let downloadedPages   = 0;
 let totalPages        = 0;
 
-/** Unit ID текущего документа; заполняется в init() из GET_STATE */
 let currentUnit = null;
 
 // ── Тема ──────────────────────────────────────────────────────────────────────
@@ -128,33 +129,37 @@ function showSummary(kind, extra = {}) {
     items.push(['Скорость', `${Math.round(downloadedPages / elapsed * 60)} стр/мин`]);
   if (isPDF) items.push(['Формат', 'PDF-файл']);
 
-  summaryGrid.innerHTML = items
-    .map(([k, v]) => `<div class="summary-item">${k}: <strong>${v}</strong></div>`)
+  // Definition-list: ключ muted, значение bold
+  summaryList.innerHTML = items
+    .map(([k, v]) => `<div class="summary-item"><span class="summary-key">${k}</span><span class="summary-val">${v}</span></div>`)
     .join('');
 
   summaryCard.classList.remove('visible');
-  void summaryCard.offsetHeight;
+  void summaryCard.offsetHeight; // принудительный reflow — перезапускает анимацию
   summaryCard.classList.add('visible');
 }
 
 function hideSummary() { summaryCard.classList.remove('visible'); }
 
-// ── Баннер ────────────────────────────────────────────────────────────────────
+// ── Баннер и видимость секций ─────────────────────────────────────────────────
+
+// Элементы, которые скрываются когда не архивная страница
+const archiveOnlyEls = [actionsSection, mainSep, rangeSection, notesSection, exportSection, historySection];
 
 function setArchivePage(isArchive) {
   isArchivePage = isArchive;
 
-  // Баннер показывается только когда не архивная страница
+  // Баннер показывается только при не-архивной странице
   bannerNotArchive.classList.toggle('warn', !isArchive);
   bannerNotArchive.style.display = isArchive ? 'none' : '';
 
-  actionsSection.classList.toggle('hidden', !isArchive);
+  // Скрываем/показываем все зависящие от архива секции
+  archiveOnlyEls.forEach(el => el.classList.toggle('hidden', !isArchive));
 
   btnAll.disabled     = !isArchive || isRunning;
   btnCurrent.disabled = !isArchive || isRunning;
   btnPDF.disabled     = !isArchive || isRunning;
 
-  // Экспорт и заметки доступны только на странице архива
   exportCSV.disabled    = !isArchive;
   exportJSON.disabled   = !isArchive;
   exportBibTeX.disabled = !isArchive;
@@ -285,13 +290,13 @@ function setProgress(percent, current, total) {
   }
 }
 
+// Плавное завершение прогресс-бара — Promise резолвится после CSS-анимации
 function completeProgressBar() {
   return new Promise(resolve => {
     progressBar.classList.remove('active');
     progressBar.classList.add('completing');
     progressBar.style.width = '100%';
     progressPct.textContent = '100%';
-    // 600ms — длительность transition в CSS класса .completing
     setTimeout(() => {
       progressBar.classList.remove('completing');
       resolve();
@@ -342,10 +347,9 @@ function sendToActiveTab(message, cb) {
 
 const NOTES_MAX = 4000;
 
-/** Ключ для chrome.storage.local: yar_notes_{unit} */
 function notesKey(unit) { return `yar_notes_${unit}`; }
 
-let notesSaveTimer = null;
+let notesSaveTimer  = null;
 let notesSavedTimer = null;
 
 function flashNotesSaved() {
@@ -380,11 +384,27 @@ function loadNotes(unit) {
 
 notesArea.addEventListener('input', onNotesInput);
 
-// Аккордеон «Заметки»
+// ── Унифицированные аккордеоны ────────────────────────────────────────────────
+
+function bindAccordion(toggleEl, sectionEl) {
+  toggleEl.addEventListener('click', () => {
+    const isOpen = sectionEl.classList.toggle('open');
+    toggleEl.setAttribute('aria-expanded', String(isOpen));
+  });
+}
+
+bindAccordion(notesToggle,   notesSection);
+bindAccordion(exportToggle,  exportSection);
+bindAccordion(historyToggle, historySection);
+
+// Открытие заметок фокусирует textarea
 notesToggle.addEventListener('click', () => {
-  const isOpen = notesSection.classList.toggle('open');
-  notesToggle.setAttribute('aria-expanded', String(isOpen));
-  if (isOpen) notesArea.focus();
+  if (notesSection.classList.contains('open')) notesArea.focus();
+});
+
+// История — подгружает данные при открытии
+historyToggle.addEventListener('click', () => {
+  if (historySection.classList.contains('open')) loadHistory();
 });
 
 // ── Экспорт метаданных ────────────────────────────────────────────────────────
@@ -399,46 +419,33 @@ function downloadTextFile(filename, content, mimeType = 'text/plain') {
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 10_000);
 }
 
-// ── Форматировщики ────────────────────────────────────────────────────────────
-
 function formatCSV(data) {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-
-  const header  = [q('Поле'), q('Значение')];
-  const fixed   = [
-    ['Название',       data.title       ],
-    ['Архив',          data.archive     ],
-    ['Unit ID',        data.unitId      ],
-    ['URL',            data.url         ],
-    ['Текущая стр.',   data.currentPage ],
-    ['Дата доступа',   formatDateRu(data.accessedAt)],
+  const header    = [q('Поле'), q('Значение')];
+  const fixed     = [
+    ['Название',     data.title      ],
+    ['Архив',        data.archive    ],
+    ['Unit ID',      data.unitId     ],
+    ['URL',          data.url        ],
+    ['Текущая стр.', data.currentPage],
+    ['Дата доступа', formatDateRu(data.accessedAt)],
   ];
   const fieldRows = Object.entries(data.fields || {});
-
   const rows = [
     header,
     ...fixed.map(([k, v]) => [q(k), q(v)]),
     ...(fieldRows.length ? [['', '']] : []),
     ...fieldRows.map(([k, v]) => [q(k), q(v)])
   ];
-
   return rows.map(r => r.join(',')).join('\r\n');
 }
 
 function formatJSON(data) {
-  return JSON.stringify(
-    {
-      unitId:      data.unitId,
-      title:       data.title,
-      archive:     data.archive,
-      url:         data.url,
-      currentPage: data.currentPage,
-      accessedAt:  data.accessedAt,
-      fields:      data.fields || {}
-    },
-    null,
-    2
-  );
+  return JSON.stringify({
+    unitId: data.unitId, title: data.title, archive: data.archive,
+    url: data.url, currentPage: data.currentPage,
+    accessedAt: data.accessedAt, fields: data.fields || {}
+  }, null, 2);
 }
 
 function formatBibTeX(data) {
@@ -446,82 +453,52 @@ function formatBibTeX(data) {
   const year = isNaN(d) ? new Date().getFullYear() : d.getFullYear();
   const mon  = isNaN(d) ? '' : d.toLocaleString('en', { month: 'long' }).toLowerCase();
   const key  = `yar_${data.unitId || 'unknown'}_${year}`;
-
   const bib  = v => String(v ?? '').replace(/[\\{}]/g, m => `\\${m}`);
-  const note = Object.entries(data.fields || {})
-    .slice(0, 10)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join('; ');
-
+  const note = Object.entries(data.fields || {}).slice(0, 10).map(([k, v]) => `${k}: ${v}`).join('; ');
   const lines = [
     `@misc{${key},`,
     `  title        = {${bib(data.title || 'Без названия')}},`,
     `  institution  = {${bib(data.archive)}},`,
     `  year         = {${year}},`,
   ];
-
   if (mon) lines.push(`  month        = {${mon}},`);
   lines.push(`  url          = {${bib(data.url)}},`);
-  if (note) lines.push(`  note         = {Unit ID: ${data.unitId}. ${bib(note)}},`);
-  else      lines.push(`  note         = {Unit ID: ${data.unitId}},`);
+  lines.push(note
+    ? `  note         = {Unit ID: ${data.unitId}. ${bib(note)}},`
+    : `  note         = {Unit ID: ${data.unitId}},`
+  );
   lines.push(`  howpublished = {\\url{${bib(data.url)}}}`);
   lines.push(`}`);
-
   return lines.join('\n');
 }
 
 function formatDateRu(iso) {
   try {
-    return new Date(iso).toLocaleDateString('ru-RU', {
-      day: '2-digit', month: '2-digit', year: 'numeric'
-    });
+    return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   } catch { return iso || ''; }
 }
 
 function fetchMetaAndExport(callback) {
   sendToActiveTab({ type: 'GET_METADATA' }, response => {
-    if (chrome.runtime.lastError || !response) {
-      showToast('Ошибка: нет связи со страницей', 3000); return;
-    }
-    if (response.error) {
-      showToast('Откройте документ на странице архива', 3000); return;
-    }
+    if (chrome.runtime.lastError || !response) { showToast('Ошибка: нет связи со страницей', 3000); return; }
+    if (response.error) { showToast('Откройте документ на странице архива', 3000); return; }
     callback(response.data);
   });
 }
 
 function safeFilename(data, ext) {
-  const title = data.title
-    ? data.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)
-    : 'metadata';
+  const title = data.title ? data.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) : 'metadata';
   return `${title}_unit_${data.unitId || 'unknown'}.${ext}`;
 }
 
 exportCSV.addEventListener('click', () => {
-  fetchMetaAndExport(data => {
-    downloadTextFile(safeFilename(data, 'csv'), formatCSV(data), 'text/csv');
-    showToast('CSV сохранён', 2000);
-  });
+  fetchMetaAndExport(data => { downloadTextFile(safeFilename(data, 'csv'), formatCSV(data), 'text/csv'); showToast('CSV сохранён', 2000); });
 });
-
 exportJSON.addEventListener('click', () => {
-  fetchMetaAndExport(data => {
-    downloadTextFile(safeFilename(data, 'json'), formatJSON(data), 'application/json');
-    showToast('JSON сохранён', 2000);
-  });
+  fetchMetaAndExport(data => { downloadTextFile(safeFilename(data, 'json'), formatJSON(data), 'application/json'); showToast('JSON сохранён', 2000); });
 });
-
 exportBibTeX.addEventListener('click', () => {
-  fetchMetaAndExport(data => {
-    downloadTextFile(safeFilename(data, 'bib'), formatBibTeX(data), 'text/plain');
-    showToast('BibTeX сохранён', 2000);
-  });
-});
-
-// Аккордеон «Экспорт»
-exportToggle.addEventListener('click', () => {
-  const isOpen = exportSection.classList.toggle('open');
-  exportToggle.setAttribute('aria-expanded', String(isOpen));
+  fetchMetaAndExport(data => { downloadTextFile(safeFilename(data, 'bib'), formatBibTeX(data), 'text/plain'); showToast('BibTeX сохранён', 2000); });
 });
 
 // ── История загрузок ──────────────────────────────────────────────────────────
@@ -531,28 +508,27 @@ function relativeTime(ts) {
   const min  = Math.floor(diff / 60_000);
   const hr   = Math.floor(diff / 3_600_000);
   const day  = Math.floor(diff / 86_400_000);
-  if (diff < 60_000)   return 'только что';
-  if (min  < 60)       return `${min} мин назад`;
-  if (hr   < 24)       return `${hr} ч назад`;
-  if (day  < 30)       return `${day} дн назад`;
+  if (diff < 60_000) return 'только что';
+  if (min  < 60)     return `${min} мин назад`;
+  if (hr   < 24)     return `${hr} ч назад`;
+  if (day  < 30)     return `${day} дн назад`;
   return new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
 function renderHistory(entries) {
   historyCount.textContent = entries.length;
-
-  const old = historyList.querySelectorAll('.history-item');
-  old.forEach(el => el.remove());
+  historyList.querySelectorAll('.history-item').forEach(el => el.remove());
 
   if (!entries.length) { historyEmpty.style.display = 'block'; return; }
   historyEmpty.style.display = 'none';
 
   entries.slice(0, 8).forEach(entry => {
-    const item = document.createElement('div');
+    const item  = document.createElement('div');
     item.className = 'history-item';
     item.setAttribute('role', 'listitem');
 
     const fmt   = (entry.format || 'jpg').toLowerCase();
+    // CSS text-overflow: ellipsis справляется сам — JS-обрезка убрана
     const title = entry.title || `Документ ${entry.unit}`;
     const time  = relativeTime(entry.savedAt || entry.timestamp || 0);
     const pages = entry.pages ? `${entry.pages} стр.` : '';
@@ -584,80 +560,42 @@ function loadHistory() {
   });
 }
 
-historyToggle.addEventListener('click', () => {
-  const isOpen = historySection.classList.toggle('open');
-  historyToggle.setAttribute('aria-expanded', String(isOpen));
-  if (isOpen) loadHistory();
-});
-
 // ── Обработчики основных кнопок ───────────────────────────────────────────────
 
 btnAll.addEventListener('click', () => {
   if (isRunning || !isArchivePage) return;
-
-  downloadStartTime = Date.now();
-  downloadedPages   = 0;
-  totalPages        = 0;
-  isPDFMode         = false;
-  hideSummary();
-
+  downloadStartTime = Date.now(); downloadedPages = 0; totalPages = 0;
+  isPDFMode = false; hideSummary();
   setRunningUI(true, false);
-  setStatus('Поиск страниц…');
-  setProgress(0);
-  btnAllText.textContent = 'Поиск…';
-  btnAll.classList.add('searching');
-
-  sendToActiveTab({
-    type:     'DOWNLOAD_ALL',
-    fromPage: fromPage > RANGE_MIN ? fromPage : null,
-    toPage
-  });
+  setStatus('Поиск страниц…'); setProgress(0);
+  btnAllText.textContent = 'Поиск…'; btnAll.classList.add('searching');
+  sendToActiveTab({ type: 'DOWNLOAD_ALL', fromPage: fromPage > RANGE_MIN ? fromPage : null, toPage });
 });
 
 btnCurrent.addEventListener('click', () => {
   if (!isArchivePage) return;
-  hideSummary();
-  setStatus('Скачивание текущей страницы…');
+  hideSummary(); setStatus('Скачивание текущей страницы…');
   sendToActiveTab({ type: 'DOWNLOAD_CURRENT' });
 });
 
 btnPDF.addEventListener('click', () => {
   if (isRunning || !isArchivePage) return;
-
-  downloadStartTime = Date.now();
-  downloadedPages   = 0;
-  totalPages        = 0;
-  isPDFMode         = true;
-  hideSummary();
-
+  downloadStartTime = Date.now(); downloadedPages = 0; totalPages = 0;
+  isPDFMode = true; hideSummary();
   setRunningUI(true, false);
-  setStatus('PDF: поиск страниц…');
-  setProgress(0);
-  btnAllText.textContent = 'PDF…';
-  btnAll.classList.add('searching');
-
-  sendToActiveTab({
-    type:     'GENERATE_PDF',
-    fromPage: fromPage > RANGE_MIN ? fromPage : null,
-    toPage
-  });
+  setStatus('PDF: поиск страниц…'); setProgress(0);
+  btnAllText.textContent = 'PDF…'; btnAll.classList.add('searching');
+  sendToActiveTab({ type: 'GENERATE_PDF', fromPage: fromPage > RANGE_MIN ? fromPage : null, toPage });
 });
 
 btnPause.addEventListener('click', () => {
   if (!isRunning) return;
   isPaused = !isPaused;
-
   pauseIcon.textContent  = isPaused ? '▶' : '⏸';
   pauseLabel.textContent = isPaused ? 'Продолжить' : 'Пауза';
   progressBar.classList.toggle('active', !isPaused);
-
-  if (isPaused) {
-    setStatus('Пауза');
-    sendToActiveTab({ type: 'PAUSE' });
-  } else {
-    setStatus('Продолжение…');
-    sendToActiveTab({ type: 'RESUME' });
-  }
+  if (isPaused) { setStatus('Пауза'); sendToActiveTab({ type: 'PAUSE' }); }
+  else          { setStatus('Продолжение…'); sendToActiveTab({ type: 'RESUME' }); }
 });
 
 btnStop.addEventListener('click', () => {
@@ -667,29 +605,18 @@ btnStop.addEventListener('click', () => {
 
 openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
-const bannerArchivesLink = document.getElementById('bannerArchivesLink');
-if (bannerArchivesLink) {
-  bannerArchivesLink.addEventListener('click', e => {
-    e.preventDefault();
-    chrome.runtime.openOptionsPage();
-  });
+const bannerSettingsBtn = document.getElementById('bannerSettingsBtn');
+if (bannerSettingsBtn) {
+  bannerSettingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
 }
 
 // ── Клавиатурные сокращения ───────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
-  if (e.target === thumbStart || e.target === thumbEnd) return;
-  if (e.target === notesArea) return;
-
-  if (e.code === 'Space' && isRunning) {
-    e.preventDefault(); btnPause.click();
-  }
-  if (e.code === 'Escape' && isRunning) {
-    e.preventDefault(); btnStop.click();
-  }
-  if (e.altKey && e.code === 'KeyS') {
-    e.preventDefault(); chrome.runtime.openOptionsPage();
-  }
+  if (e.target === thumbStart || e.target === thumbEnd || e.target === notesArea) return;
+  if (e.code === 'Space'  && isRunning) { e.preventDefault(); btnPause.click(); }
+  if (e.code === 'Escape' && isRunning) { e.preventDefault(); btnStop.click(); }
+  if (e.altKey && e.code === 'KeyS')    { e.preventDefault(); chrome.runtime.openOptionsPage(); }
 });
 
 // ── Входящие сообщения ────────────────────────────────────────────────────────
@@ -698,20 +625,13 @@ chrome.runtime.onMessage.addListener(msg => {
   if (!msg?.type) return;
 
   switch (msg.type) {
-
     case 'STATUS':
       setStatus(msg.text);
-      if (
-        msg.text &&
-        (msg.text.startsWith('Скачивание') || msg.text.startsWith('PDF: загрузка')) &&
-        btnAll.classList.contains('searching')
-      ) {
+      if (msg.text && (msg.text.startsWith('Скачивание') || msg.text.startsWith('PDF: загрузка')) && btnAll.classList.contains('searching')) {
         btnAllText.textContent = isPDFMode ? 'Загрузка страниц…' : 'Загрузка…';
         btnAll.classList.remove('searching');
       }
-      if (msg.text?.startsWith('PDF: сборка')) {
-        btnAllText.textContent = 'Сборка PDF…';
-      }
+      if (msg.text?.startsWith('PDF: сборка')) { btnAllText.textContent = 'Сборка PDF…'; }
       break;
 
     case 'PROGRESS':
@@ -726,10 +646,7 @@ chrome.runtime.onMessage.addListener(msg => {
 
       setStatus(text);
 
-      const finalPercent = isStopped
-        ? (downloadedPages / (totalPages || 1) * 100)
-        : 100;
-
+      const finalPercent = isStopped ? (downloadedPages / (totalPages || 1) * 100) : 100;
       const toastMsg = isError
         ? `Ошибка: ${text.replace(/^(Ошибка|PDF: ошибка)[: ]*/, '')}`
         : isStopped
@@ -750,10 +667,7 @@ chrome.runtime.onMessage.addListener(msg => {
         setProgress(finalPercent, downloadedPages, totalPages);
         setRunningUI(false, false);
         if (downloadedPages > 0 || isPDF) {
-          showSummary(
-            isStopped ? 'stopped' : 'error',
-            { failedCount: msg.failedCount ?? 0 }
-          );
+          showSummary(isStopped ? 'stopped' : 'error', { failedCount: msg.failedCount ?? 0 });
         }
         showToast(toastMsg, isError ? 3500 : 2500);
       }
@@ -797,32 +711,25 @@ chrome.runtime.onMessage.addListener(msg => {
   });
 
   sendToActiveTab({ type: 'GET_STATE' }, state => {
-    if (chrome.runtime.lastError) { setArchivePage(false); return; }
-    if (!state)                   { setArchivePage(false); return; }
+    if (chrome.runtime.lastError || !state) { setArchivePage(false); return; }
 
     setArchivePage(!!state.isArchivePage);
 
-    // Сохраняем unit и загружаем заметку
     currentUnit = state.unit || null;
     if (currentUnit) loadNotes(currentUnit);
 
     if (state.resumeState && !state.isRunning && state.isArchivePage) {
-      const rs      = state.resumeState;
-      const ageMin  = Math.round((Date.now() - (rs.savedAt ?? 0)) / 60000);
+      const rs       = state.resumeState;
+      const ageMin   = Math.round((Date.now() - (rs.savedAt ?? 0)) / 60000);
       const resumePg = rs.lastPage + 1;
-      if (resumePg > 1 && resumePg <= rangeMax) {
-        fromPage = resumePg; updateRangeUI();
-      }
-      setStatus(
-        `↩ Прервано на стр. ${rs.lastPage} из ${rs.totalPages} ` +
-        `(${ageMin} мин. назад) — двойной клик по слайдеру для сброса`
-      );
+      if (resumePg > 1 && resumePg <= rangeMax) { fromPage = resumePg; updateRangeUI(); }
+      setStatus(`↩ Прервано на стр. ${rs.lastPage} из ${rs.totalPages} (${ageMin} мин. назад) — двойной клик по слайдеру для сброса`);
     } else if (state.currentPage && state.currentPage > 1) {
       fromPage = state.currentPage; updateRangeUI();
     }
 
     if (state.isRunning) {
-      downloadStartTime      = Date.now();
+      downloadStartTime = Date.now();
       setRunningUI(true, state.isPaused);
       setStatus(state.isPaused ? 'Пауза' : 'Загрузка…');
       btnAllText.textContent = 'Загрузка…';
