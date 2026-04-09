@@ -1,6 +1,6 @@
 # YARchive Downloader
 
-[![Version](https://img.shields.io/badge/version-2.2.6-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-2.3.5-blue.svg)](https://github.com)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-green.svg)](https://developer.chrome.com/docs/extensions/mv3/)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
