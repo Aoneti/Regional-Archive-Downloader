@@ -1,12 +1,12 @@
 # YARchive Downloader
 
-[![Version](https://img.shields.io/badge/version-2.3.5-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-2.5.5-blue.svg)](https://github.com)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-green.svg)](https://developer.chrome.com/docs/extensions/mv3/)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 ## 📖 Описание
 
-**YARchive Downloader** — это инструмент для автоматической загрузки страниц архивных документов в виде изображений или PDF. Расширение работает на сайте Государтстенного архива Ярославской области.
+**YARchive Downloader** — это расширение для загрузки страниц архивных документов в виде изображений или PDF. Расширение работает на сайте Государтстенного архива Ярославской области и других.
 
 ---
 
@@ -21,21 +21,21 @@
 ### Дополнительные возможности
 - 📁 Создание отдельных папок для каждого документа
 - 🚀 Старт загрузки с текущей открытой страницы
+- 📜 История загрузок
 - 📊 Экспорт метаданных документа
 - 📝 Заметки к документам
 - 🌓 Тёмная/светлая тема интерфейса
-- 📜 История загрузок
 
 ---
 
 ## 🏛️ Поддерживаемые архивы
 
-| Архив | Регион | Сайт | Поддержка | 
-|-------|--------|------|------|
-| Архив Ярославской области | Ярославская область | [af.yar-archives.ru](https://af.yar-archives.ru) |Полная|
-| Архив Вологодской области | Вологодская область | [gosarchive.gov35.ru](https://gosarchive.gov35.ru) |Полная (после авторизации)|
-| Архив Пермского края | Пермский край | [archives.permkrai.ru](https://archives.permkrai.ru) |Тестовый режим|
-| Архив Саратовской области | Саратовская область | [archivesaratov.ru](https://archivesaratov.ru) |Тестовый режим|
+| Архив | Сайт | Поддержка | 
+|-------|------|------|
+| Архив Ярославской области | [af.yar-archives.ru](https://af.yar-archives.ru) |Полная|
+| Архив Вологодской области | [gosarchive.gov35.ru](https://gosarchive.gov35.ru) |Полная (после авторизации)|
+| Архив Пермского края | [archives.permkrai.ru](https://archives.permkrai.ru) |Тестовый режим|
+| Архив Саратовской области | [archivesaratov.ru](https://archivesaratov.ru) |Тестовый режим|
 
 ---
 

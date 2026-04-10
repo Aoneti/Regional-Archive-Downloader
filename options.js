@@ -35,16 +35,6 @@ function applyTheme(theme) {
   });
 }
 
-// Реагируем на изменение системной темы только в режиме «Авто»
-mq.addEventListener('change', () => {
-  const active = document.querySelector('.theme-btn.active');
-  if (active?.dataset.theme === 'auto') applyTheme('auto');
-});
-
-$('themeAutoBtn') .addEventListener('click', () => applyTheme('auto'));
-$('themeLightBtn').addEventListener('click', () => applyTheme('light'));
-$('themeDarkBtn') .addEventListener('click', () => applyTheme('dark'));
-
 // ── Двусторонняя привязка слайдер ↔ число ────────────────────────────────────
 
 function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
@@ -69,10 +59,6 @@ function bindSliderNumber(sliderId, numberId, displayId, limitKey) {
   update(number.value || DEFAULTS[limitKey]);
 }
 
-bindSliderNumber('delaySlider',      'delayMs',             'delayVal',      'delayMs');
-bindSliderNumber('maxPagesSlider',   'maxPages',            'maxPagesVal',   'maxPages');
-bindSliderNumber('concurrentSlider', 'concurrentDownloads', 'concurrentVal', 'concurrentDownloads');
-
 // ── Пресеты задержки ──────────────────────────────────────────────────────────
 
 function syncPresets(value) {
@@ -81,46 +67,19 @@ function syncPresets(value) {
   });
 }
 
-document.querySelectorAll('.preset').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const input = $(btn.dataset.target);
-    if (!input) return;
-    input.value = Number(btn.dataset.value);
-    input.dispatchEvent(new Event('change'));
-  });
-});
-
 // ── Адаптивная скорость — визуальная обратная связь ───────────────────────────
 
 function syncAdaptiveUI(enabled) {
-  const block = $('adaptiveBlock');
-  const note  = $('delayNote');
+  const block  = $('adaptiveBlock');
+  const note   = $('delayNote');
   const slider = $('delaySlider');
   const input  = $('delayMs');
 
   block.classList.toggle('on', enabled);
   note.style.display = enabled ? 'block' : 'none';
 
-  // Визуально приглушаем (но не блокируем — пользователь может менять минимум)
   slider.classList.toggle('muted', enabled);
   input.classList.toggle('muted', enabled);
-}
-
-$('adaptiveSpeed').addEventListener('change', function () {
-  syncAdaptiveUI(this.checked);
-});
-
-// ── Аккордеон «Доступные архивы» ─────────────────────────────────────────────
-
-const archivesToggle = $('archivesToggle');
-const archivesList   = $('archivesList');
-
-if (archivesToggle && archivesList) {
-  archivesToggle.addEventListener('click', () => {
-    const isOpen = archivesList.classList.toggle('visible');
-    archivesToggle.classList.toggle('open', isOpen);
-    archivesToggle.setAttribute('aria-expanded', String(isOpen));
-  });
 }
 
 // ── Загрузка настроек ─────────────────────────────────────────────────────────
@@ -138,10 +97,7 @@ function load() {
       $(id).dispatchEvent(new Event('change'));
     });
 
-    // Тема: дефолт 'auto' — при первой установке следует системной теме
     applyTheme(items.theme || DEFAULTS.theme);
-
-    // Синхронизируем UI адаптивной скорости
     syncAdaptiveUI(!!items.adaptiveSpeed);
   });
 }
@@ -216,7 +172,50 @@ function showMsg(text, kind = 'ok') {
 // ── Инициализация ─────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+
+  mq.addEventListener('change', () => {
+    const active = document.querySelector('.theme-btn.active');
+    if (active?.dataset.theme === 'auto') applyTheme('auto');
+  });
+
+  // Theme buttons
+  $('themeAutoBtn') .addEventListener('click', () => applyTheme('auto'));
+  $('themeLightBtn').addEventListener('click', () => applyTheme('light'));
+  $('themeDarkBtn') .addEventListener('click', () => applyTheme('dark'));
+
+  // Slider ↔ number bindings
+  bindSliderNumber('delaySlider',      'delayMs',             'delayVal',      'delayMs');
+  bindSliderNumber('maxPagesSlider',   'maxPages',            'maxPagesVal',   'maxPages');
+  bindSliderNumber('concurrentSlider', 'concurrentDownloads', 'concurrentVal', 'concurrentDownloads');
+
+  // Preset buttons
+  document.querySelectorAll('.preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = $(btn.dataset.target);
+      if (!input) return;
+      input.value = Number(btn.dataset.value);
+      input.dispatchEvent(new Event('change'));
+    });
+  });
+
+  // Adaptive speed toggle
+  $('adaptiveSpeed').addEventListener('change', function () {
+    syncAdaptiveUI(this.checked);
+  });
+
+  // Archives accordion
+  const archivesToggle = $('archivesToggle');
+  const archivesList   = $('archivesList');
+  if (archivesToggle && archivesList) {
+    archivesToggle.addEventListener('click', () => {
+      const isOpen = archivesList.classList.toggle('visible');
+      archivesToggle.classList.toggle('open', isOpen);
+      archivesToggle.setAttribute('aria-expanded', String(isOpen));
+    });
+  }
+
+  // Load saved settings and bind action buttons
   load();
-  $('saveBtn').addEventListener('click', save);
+  $('saveBtn') .addEventListener('click', save);
   $('resetBtn').addEventListener('click', resetDefaults);
 });

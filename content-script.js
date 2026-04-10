@@ -36,20 +36,33 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ── Константы ─────────────────────────────────────────────────────────────────
+
+const BLANK_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+const ARCHIVE_NUM_MAP = {
+  'af.yar-archives.ru':    '27',
+  'gosarchive.gov35.ru':   '1',
+  'archives.permkrai.ru':  '2',
+  'archivesaratov.ru':     '3',
+  'www.archivesaratov.ru': '3'
+};
+const ARCHIVE_PROBE_CANDIDATES = ['27', '1', '2', '3', '4', '5'];
+const PDF_PAGE_HARD_LIMIT = 500;
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
 // ── Кэш номера архива ─────────────────────────────────────────────────────────
 let cachedArchNum = null;
 
-// ── IndexedDB — хранилище resume-state и кэша изображений ────────────────────
-// Dexie.js требует локального файла. Вместо него — минимальный нативный wrapper с graceful fallback на chrome.storage.local при недоступности IDB
+// ── IndexedDB ─────────────────────────────────────────────────────────────────
 
 const IDB_NAME    = 'yarchive_v1';
 const IDB_VERSION = 1;
-const IMG_TTL_MS  = 24 * 60 * 60 * 1000; // 24 часа
+const IMG_TTL_MS  = 24 * 60 * 60 * 1000;
 
-let _idb      = null;   // открытое соединение
-let _idbDead  = false;  // флаг: IDB недоступен, используем fallback
+let _idb     = null;
+let _idbDead = false;
 
-/** Открывает БД (идемпотентно). */
 function idbOpen() {
   if (_idb)     return Promise.resolve(_idb);
   if (_idbDead) return Promise.reject(new Error('IDB unavailable'));
@@ -71,6 +84,10 @@ function idbOpen() {
     req.onsuccess = ({ target: { result: db } }) => {
       _idb = db;
       _idb.onerror = ev => log('IDB error:', ev.target.error);
+      _idb.onclose = () => {
+        log('IDB connection closed unexpectedly – will reopen on next use');
+        _idb = null;
+      };
       resolve(_idb);
     };
 
@@ -84,7 +101,6 @@ function idbOpen() {
   });
 }
 
-/** Выполняет транзакционную операцию, возвращая Promise. */
 function idbTx(storeName, mode, fn) {
   return idbOpen().then(db => new Promise((resolve, reject) => {
     const tx    = db.transaction(storeName, mode);
@@ -94,8 +110,8 @@ function idbTx(storeName, mode, fn) {
     try { result = fn(store, tx); }
     catch (e) { reject(e); return; }
 
-    // Если fn вернула IDBRequest — дожидаемся его
-    if (result && typeof result.onsuccess === 'undefined' && result instanceof Promise) {
+    // If fn returned a Promise, delegate to it directly.
+    if (result instanceof Promise) {
       result.then(resolve, reject);
       return;
     }
@@ -107,7 +123,6 @@ function idbTx(storeName, mode, fn) {
 
 // ── Resume-state API ──────────────────────────────────────────────────────────
 
-/** Ключ для chrome.storage.local fallback */
 const resumeKey = unit => `yar_resume_${unit}`;
 
 async function saveResumeState(unit, state) {
@@ -115,7 +130,6 @@ async function saveResumeState(unit, state) {
   try {
     await idbTx('resume', 'readwrite', store => store.put(record));
   } catch {
-    // Fallback: chrome.storage.local (fire-and-forget)
     chrome.storage.local.set({ [resumeKey(unit)]: record });
   }
 }
@@ -143,7 +157,6 @@ async function clearResumeState(unit) {
   } catch {
     log('IDB clearResume failed');
   }
-  // Дополнительно чистим storage.local на случай старых записей
   chrome.storage.local.remove(resumeKey(unit));
 }
 
@@ -151,14 +164,10 @@ async function clearResumeState(unit) {
 
 const imgCacheKey = (unit, page) => `${unit}_${page}`;
 
-/**
- * Возвращает кэшированные байты страницы или null, если кэш устарел/отсутствует.
- * @returns {Promise<Uint8Array|null>}
- */
 async function imgCacheGet(unit, page) {
   try {
     const db = await idbOpen();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const req = db.transaction('imgcache', 'readonly')
                     .objectStore('imgcache')
                     .get(imgCacheKey(unit, page));
@@ -173,22 +182,12 @@ async function imgCacheGet(unit, page) {
   }
 }
 
-/**
- * Сохраняет байты страницы в кэш (fire-and-forget, ошибки не критичны).
- * @param {string}     unit
- * @param {number}     page
- * @param {Uint8Array} bytes
- */
 function imgCachePut(unit, page, bytes) {
   idbTx('imgcache', 'readwrite', store =>
     store.put({ cacheKey: imgCacheKey(unit, page), unit, page, bytes, cachedAt: Date.now() })
   ).catch(() => {});
 }
 
-/**
- * Удаляет все кэшированные страницы заданного документа.
- * Вызывается после успешной сборки PDF (кэш больше не нужен).
- */
 async function imgCacheClear(unit) {
   try {
     const db = await idbOpen();
@@ -202,40 +201,32 @@ async function imgCacheClear(unit) {
       tx.oncomplete = () => resolve();
       tx.onerror    = () => resolve();
     });
-  } catch { /* не критично */ }
+  } catch { /* not critical */ }
 }
 
 // ── Адаптивный троттлер ───────────────────────────────────────────────────────
 
-/**
- * Отслеживает ответы сервера и автоматически корректирует задержку:
- * — при 429 / 503          → экспоненциальный бэкофф (макс. 8 с)
- * — при N последовательных успехах → плавное снижение к базовому значению
- */
 class AdaptiveThrottle {
   constructor() {
     this.baseDelay    = 250;
     this.currentDelay = 250;
     this.enabled      = false;
-    this._ok          = 0;   // consecutive successes
-    this._fail        = 0;   // consecutive failures
-    this._REDUCE_AT   = 30;  // успехов до снижения
+    this._ok          = 0;
+    this._fail        = 0;
+    this._REDUCE_AT   = 30;
     this._MAX_DELAY   = 8000;
   }
 
-  /** Обновляет параметры из настроек (вызывается в начале каждой сессии). */
   configure(baseDelay, enabled) {
     this.baseDelay = baseDelay;
     this.enabled   = enabled;
     if (!enabled) this.currentDelay = baseDelay;
   }
 
-  /** Текущая задержка (мс). */
   get delay() {
     return this.enabled ? this.currentDelay : this.baseDelay;
   }
 
-  /** Вызывается при успешном HTTP-ответе. */
   onSuccess() {
     if (!this.enabled) return;
     this._fail = 0;
@@ -248,10 +239,6 @@ class AdaptiveThrottle {
     }
   }
 
-  /**
-   * Вызывается при получении 429 / 503 или таймауте.
-   * @param {number} status  HTTP-статус (0 = таймаут/сетевая ошибка)
-   */
   onRateLimit(status = 0) {
     if (!this.enabled) return;
     this._ok = 0;
@@ -262,7 +249,6 @@ class AdaptiveThrottle {
     sendStatus(`⚠ Сервер (${status || 'timeout'}) — задержка увеличена до ${this.currentDelay} мс`);
   }
 
-  /** Сброс в начало новой сессии (без изменения baseDelay / enabled). */
   reset() {
     this._ok = this._fail = 0;
     this.currentDelay = this.baseDelay;
@@ -273,10 +259,9 @@ const throttle = new AdaptiveThrottle();
 
 // ── Состояние загрузки ────────────────────────────────────────────────────────
 
-const TEST_TIMEOUT             = 6000;
-const RETRY_ATTEMPTS           = 2;
-const RETRY_DELAY_MS           = 400;
-const MAX_CONCURRENT_DOWNLOADS = 4;
+const TEST_TIMEOUT   = 6000;
+const RETRY_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 400;
 
 let isPaused  = false;
 let isStopped = false;
@@ -361,7 +346,7 @@ function collectStructuredMeta() {
 
 function getFullMetadata() {
   return {
-    unitId:      getUnitId()     || '',
+    unitId:      getUnitId()        || '',
     title:       getTitleFromPage() || '',
     archive:     location.hostname,
     archiveNum:  cachedArchNum || '',
@@ -378,7 +363,9 @@ function sanitizeForFilename(s) {
     .replace(/[\u0000-\u001F]/g, '')
     .replace(/[\/\\:*?"<>|]+/g, '_')
     .replace(/[\s_]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_+|_+$/g, '')
+    .replace(/\.+$/, '');         // strip trailing dots (Windows issue)
+  if (WINDOWS_RESERVED.test(str)) str = `_${str}`;
   return (str.length > 100 ? str.slice(0, 100) : str) || 'untitled';
 }
 
@@ -408,15 +395,27 @@ async function detectArchiveNum(unit) {
   const fromPath = location.pathname.match(/\/archive(\d+)\//)?.[1];
   if (fromPath) { cachedArchNum = fromPath; return fromPath; }
 
-  log('archiveNum not in pathname, probing…');
-  for (const n of ['1', '27', '2', '3', '4', '5']) {
+  // Try the well-known mapping first – avoids unnecessary probing.
+  const known = ARCHIVE_NUM_MAP[location.hostname];
+  if (known) {
+    const ok = await testImage(
+      `${location.origin}/archive${known}/image/${unit}?n=1&_ts=${Date.now()}`, 4000
+    );
+    if (ok) { cachedArchNum = known; return known; }
+  }
+
+  // Fall through to probing remaining candidates.
+  log('archiveNum not in pathname or map, probing…');
+  for (const n of ARCHIVE_PROBE_CANDIDATES) {
+    if (n === known) continue; // already tried above
     const ok = await testImage(
       `${location.origin}/archive${n}/image/${unit}?n=1&_ts=${Date.now()}`, 4000
     );
     if (ok) { cachedArchNum = n; return n; }
   }
-  cachedArchNum = '27';
-  return '27';
+
+  cachedArchNum = known ?? '27';
+  return cachedArchNum;
 }
 
 // ── Проверка существования страницы ──────────────────────────────────────────
@@ -430,7 +429,7 @@ function testImage(url, timeout = TEST_TIMEOUT) {
       done = true;
       clearTimeout(tid);
       img.onload = img.onerror = null;
-      img.src = '';
+      img.src = BLANK_GIF;
       resolve(r);
     };
     const tid = setTimeout(() => finish(false), timeout);
@@ -450,12 +449,6 @@ async function testImageWithRetry(url, retries = RETRY_ATTEMPTS) {
 
 // ── SHA-256 ───────────────────────────────────────────────────────────────────
 
-/**
- * Вычисляет SHA-256 буфера и возвращает hex-строку.
- * Используется для fingerprint первой страницы в _meta.txt.
- * @param {ArrayBuffer} buffer
- * @returns {Promise<string|null>}
- */
 async function sha256Hex(buffer) {
   try {
     const hash = await crypto.subtle.digest('SHA-256', buffer);
@@ -470,17 +463,79 @@ async function sha256Hex(buffer) {
 
 // ── Семафор загрузок ──────────────────────────────────────────────────────────
 
-let downloadsInFlight = 0;
-
-async function downloadWithSemaphore(url, filename, limit = MAX_CONCURRENT_DOWNLOADS) {
-  while (downloadsInFlight >= limit) {
-    await sleep(200);
-    await waitIfPaused();
+class Semaphore {
+  constructor(limit) {
+    this._limit = limit;
+    this._count = 0;
+    this._queue = [];
   }
-  downloadsInFlight++;
-  chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename }, () => {
-    void chrome.runtime.lastError;
-    downloadsInFlight--;
+
+  setLimit(n) { this._limit = n; }
+
+  acquire() {
+    return new Promise(resolve => {
+      if (this._count < this._limit) {
+        this._count++;
+        resolve();
+      } else {
+        this._queue.push(resolve);
+      }
+    });
+  }
+
+  release() {
+    this._count = Math.max(0, this._count - 1);
+    if (this._queue.length > 0 && this._count < this._limit) {
+      this._count++;
+      this._queue.shift()();
+    }
+  }
+
+  drain() {
+    this._queue.forEach(r => r());
+    this._queue = [];
+    this._count = 0;
+  }
+}
+
+const dlSemaphore = new Semaphore(DEFAULTS.concurrentDownloads);
+
+// downloadId → finish(success) callback, resolved by DOWNLOAD_DONE from background.
+const downloadResolvers = new Map();
+
+async function downloadWithSemaphore(url, filename) {
+  await dlSemaphore.acquire();
+
+  // Guard: Stop was signalled while we were waiting for a slot.
+  if (isStopped) {
+    dlSemaphore.release();
+    return false;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (success) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(tid);
+      dlSemaphore.release();
+      resolve(success);
+    };
+
+    // Safety net: if the service-worker restarts and we never receive DOWNLOAD_DONE, release the slot after 60 seconds.
+    const tid = setTimeout(() => {
+      log(`download timeout for ${filename}`);
+      finish(false);
+    }, DOWNLOAD_TIMEOUT_MS);
+
+    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename }, (response) => {
+      void chrome.runtime.lastError;
+      if (isStopped || response?.error != null || response?.downloadId == null) {
+        finish(!isStopped && response?.error == null);
+        return;
+      }
+      downloadResolvers.set(response.downloadId, finish);
+    });
   });
 }
 
@@ -505,6 +560,9 @@ async function findTotalPages(unit, archNum, start, maxPages, progressCb) {
     )
   );
 
+  // Honour Stop that was signalled during the parallel probe.
+  if (isStopped) throw new Error('stopped');
+
   let lo = start, hi = null;
   for (const { page, ok } of results) {
     if (ok) lo = page; else { hi = page; break; }
@@ -522,27 +580,13 @@ async function findTotalPages(unit, archNum, start, maxPages, progressCb) {
 
 // ── Метаданные ────────────────────────────────────────────────────────────────
 
-/**
- * Скачивает _meta.txt для документа.
- * Дополнительно вычисляет SHA-256 первой страницы — это позволяет
- * при повторном скачивании проверить, не изменился ли документ на сервере.
- *
- * @param {string}      folderName
- * @param {string}      unit
- * @param {number}      totalPages
- * @param {string|null} titleRaw
- * @param {string}      archNum
- */
 async function downloadMetadata(folderName, unit, totalPages, titleRaw, archNum) {
   const pageMeta = collectPageMeta();
 
-  // SHA-256 первой страницы
   let sha256 = null;
   try {
     const res = await fetch(imageUrl(unit, archNum, 1));
-    if (res.ok) {
-      sha256 = await sha256Hex(await res.arrayBuffer());
-    }
+    if (res.ok) sha256 = await sha256Hex(await res.arrayBuffer());
   } catch (e) {
     log('SHA-256 fetch error:', e);
   }
@@ -553,7 +597,7 @@ async function downloadMetadata(folderName, unit, totalPages, titleRaw, archNum)
     `Unit ID: ${unit}`,
     `Название: ${titleRaw || 'не определено'}`,
     `Страниц найдено: ${totalPages}`,
-    `Дата скачивания: ${new Date().toLocaleString('ru-RU')}`,
+    `Дата скачивания: ${new Date().toLocaleString('ru-RU')}`
   ];
 
   if (sha256) {
@@ -577,7 +621,7 @@ function downloadErrorLog(folderName, failedPages) {
     `Не удалось скачать страниц: ${failedPages.length}`,
     `Номера: ${failedPages.join(', ')}`,
     '',
-    'Попробуйте скачать эти страницы вручную или выставьте диапазон в расширении.',
+    'Попробуйте скачать эти страницы вручную или выставьте диапазон в расширении.'
   ];
   const encoded = 'data:text/plain;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
   chrome.runtime.sendMessage({
@@ -689,20 +733,14 @@ function buildPDF(pages) {
   return out;
 }
 
-// ── Probe URL (адаптивный режим для downloadAll) ──────────────────────────────
+// ── Probe URL (адаптивный режим) ──────────────────────────────────────────────
 
-/**
- * Делает HEAD-запрос к URL и сигнализирует троттлеру о результате.
- * Вызывается каждые N страниц только при включённом adaptiveSpeed.
- * Используем GET с немедленным abort после получения статуса —
- * HEAD может быть не поддержан сервером.
- */
 async function probeUrl(url) {
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 3000);
   try {
     const res = await fetch(url, { signal: ctrl.signal });
-    ctrl.abort();  // прерываем чтение тела
+    ctrl.abort();
     clearTimeout(timer);
     if (res.status === 429 || res.status === 503) {
       throttle.onRateLimit(res.status);
@@ -711,7 +749,6 @@ async function probeUrl(url) {
     }
   } catch (e) {
     clearTimeout(timer);
-    // AbortError — мы сами отменили, это успех (статус получен)
     if (!(e instanceof DOMException && e.name === 'AbortError')) {
       log('probe error (possible overload):', e);
       throttle.onRateLimit(0);
@@ -721,14 +758,12 @@ async function probeUrl(url) {
 
 // ── Генерация PDF ─────────────────────────────────────────────────────────────
 
-/**
- * Загружает страницы документа (сначала из IDB-кэша, потом из сети),
- * собирает PDF в памяти и сохраняет через <a download>.
- * Полностью совместимо с MV3 — без offscreen-документа и внешних библиотек.
- */
 async function generatePDF(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
-  isRunning = true; isPaused = false; isStopped = false;
+  // Set isRunning BEFORE the first await to prevent a race where two concurrent callers both pass the guard before either sets the flag.
+  isRunning = true;
+  isPaused  = false;
+  isStopped = false;
 
   const cfg  = await ensureSettings();
   const unit = getUnitId();
@@ -762,7 +797,16 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
     const last  = overrideTo != null ? Math.min(overrideTo, discovered) : discovered;
     const total = last - start + 1;
 
-    if (total > 300) {
+    // Hard limit: assembling hundreds of MBs of JPEG data in a single tab's heap will cause an OOM crash in most environments.
+    if (total > PDF_PAGE_HARD_LIMIT) {
+      sendDone(
+        `PDF: слишком много страниц (${total}). Максимум ${PDF_PAGE_HARD_LIMIT} за раз — ` +
+        'задайте диапазон в слайдере или используйте режим JPG.'
+      );
+      return;
+    }
+
+    if (total > 150) {
       sendStatus(
         `PDF: ${total} стр. — потребуется несколько минут ` +
         `и ~${Math.round(total * 0.3)} МБ памяти…`
@@ -770,8 +814,8 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
       await sleep(2000);
     }
 
-    const pagesData  = [];
-    const failedNums = [];
+    const pagesData = [];
+    const failedNums = new Set();
 
     for (let p = start; p <= last; p++) {
       await waitIfPaused();
@@ -779,41 +823,40 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
       sendStatus(`PDF: страница ${p} / ${last}` +
         (cfg.adaptiveSpeed ? ` (задержка ${throttle.delay} мс)` : ''));
 
-      // 1. Проверяем IDB-кэш (изображение уже скачивали < 24 ч назад)
       let bytes = await imgCacheGet(unit, p);
 
       if (bytes) {
         log(`PDF: cache hit p${p}`);
         throttle.onSuccess();
       } else {
-        // 2. Загружаем из сети, до 3 попыток при rate-limit
+        let fetchedBytes = null;
         const MAX_RETRIES = 3;
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+
+        for (let attempt = 0; attempt < MAX_RETRIES && !fetchedBytes; attempt++) {
           try {
             const res = await fetch(imageUrl(unit, archNum, p));
-
             if (res.ok) {
-              const buf = await res.arrayBuffer();
-              bytes     = new Uint8Array(buf);
-              imgCachePut(unit, p, bytes);  // сохраняем в кэш
+              fetchedBytes = new Uint8Array(await res.arrayBuffer());
+              imgCachePut(unit, p, fetchedBytes);
               throttle.onSuccess();
-              break;
             } else if (res.status === 429 || res.status === 503) {
               throttle.onRateLimit(res.status);
-              await sleep(throttle.delay);  // ждём увеличенную паузу
-              // следующая итерация = retry
+              if (attempt < MAX_RETRIES - 1) await sleep(throttle.delay);
             } else {
               log(`PDF: skip p${p} (HTTP ${res.status})`);
-              failedNums.push(p);
               break;
             }
           } catch (e) {
             log('PDF: fetch error p' + p, e);
-            failedNums.push(p);
             break;
           }
         }
-        if (!bytes && !failedNums.includes(p)) failedNums.push(p);
+
+        if (fetchedBytes) {
+          bytes = fetchedBytes;
+        } else {
+          failedNums.add(p);
+        }
       }
 
       if (bytes) pagesData.push({ bytes, ...parseJpegHeader(bytes) });
@@ -826,7 +869,6 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
     sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
     const pdfBytes = buildPDF(pagesData);
 
-    // Сохраняем PDF через временный <a download>
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -835,12 +877,11 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
 
-    // Чистим кэш — данные больше не нужны
     imgCacheClear(unit).catch(() => {});
 
-    const failNote = failedNums.length ? ` (пропущено: ${failedNums.length})` : '';
+    const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
     sendDone(`PDF готов: ${pagesData.length} стр.${failNote}`,
-      { isPDF: true, failedCount: failedNums.length });
+      { isPDF: true, failedCount: failedNums.size });
 
     saveHistory({
       unit, title: titleRaw || `Документ ${unit}`,
@@ -853,7 +894,7 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
     else { console.error('[YARchive] generatePDF:', e); sendDone('PDF: ошибка — ' + e.message); }
   } finally {
     isRunning = false; isPaused = false; isStopped = false;
-    downloadsInFlight = 0; setIcon('inactive');
+    setIcon('inactive');
   }
 }
 
@@ -861,7 +902,9 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
 
 async function downloadAll(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
-  isRunning = true; isPaused = false; isStopped = false;
+  isRunning = true;
+  isPaused  = false;
+  isStopped = false;
 
   const cfg  = await ensureSettings();
   const unit = getUnitId();
@@ -873,6 +916,10 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
 
   throttle.configure(cfg.delayMs, cfg.adaptiveSpeed);
   throttle.reset();
+
+  // Configure the semaphore limit for this session.
+  dlSemaphore.setLimit(cfg.concurrentDownloads ?? DEFAULTS.concurrentDownloads);
+
   setIcon('active');
 
   try {
@@ -880,7 +927,6 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
     const archNum    = await detectArchiveNum(unit);
     const titleRaw   = getTitleFromPage();
     const folderName = `${sanitizeForFilename(titleRaw)}_unit_${unit}`;
-    const concLimit  = cfg.concurrentDownloads ?? MAX_CONCURRENT_DOWNLOADS;
 
     let pFrom, total, isResuming = false;
 
@@ -913,7 +959,6 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
       total = overrideTo != null ? Math.min(overrideTo, discovered) : discovered;
       pFrom = overrideFrom != null ? overrideFrom : 1;
 
-      // Метаданные + SHA-256 первой страницы
       if (cfg.createFolders) {
         downloadMetadata(folderName, unit, total, titleRaw, archNum).catch(e => log('meta:', e));
       }
@@ -921,7 +966,6 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
 
     const padWidth    = String(total).length || 3;
     const failedPages = [];
-    // Интервал зонд-проверок в адаптивном режиме (каждые 20 страниц)
     const PROBE_EVERY = 20;
 
     for (let p = pFrom; p <= total; p++) {
@@ -930,18 +974,17 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
       sendStatus(`Скачивание ${p} / ${total}` +
         (cfg.adaptiveSpeed ? ` (${throttle.delay} мс)` : ''));
 
-      // В адаптивном режиме каждые PROBE_EVERY страниц проверяем сервер
+      // Adaptive probe: check server health every PROBE_EVERY pages.
       if (cfg.adaptiveSpeed && p > pFrom && (p - pFrom) % PROBE_EVERY === 0) {
         await probeUrl(imageUrl(unit, archNum, p));
-        // После бэкоффа ждём уже обновлённую задержку
-        await sleep(throttle.delay);
       }
 
       const filename = cfg.createFolders
         ? `${folderName}/${pad(p, padWidth)}.jpg`
         : `unit_${unit}_p${pad(p, padWidth)}.jpg`;
 
-      await downloadWithSemaphore(imageUrl(unit, archNum, p), filename, concLimit);
+      const success = await downloadWithSemaphore(imageUrl(unit, archNum, p), filename);
+      if (!success) failedPages.push(p);
 
       if (p % 10 === 0) {
         saveResumeState(unit, { lastPage: p, totalPages: total, folderName, fromPage: pFrom });
@@ -967,7 +1010,11 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
     else { console.error('[YARchive] downloadAll:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
     isRunning = false; isPaused = false; isStopped = false;
-    downloadsInFlight = 0; setIcon('inactive');
+    // Unblock any queued acquire() calls and resolve all in-flight download promises so they don't leak after a Stop.
+    dlSemaphore.drain();
+    downloadResolvers.forEach(fn => fn(false));
+    downloadResolvers.clear();
+    setIcon('inactive');
   }
 }
 
@@ -993,7 +1040,7 @@ async function downloadCurrent() {
   setTimeout(() => setIcon('inactive'), 1200);
 }
 
-// ── Обработчик сообщений от popup ────────────────────────────────────────────
+// ── Обработчик сообщений от popup / background ────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg?.type) return;
@@ -1011,6 +1058,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (isRunning && isPaused) { isPaused = false; sendStatus('Продолжение…'); } break;
     case 'STOP':
       if (isRunning) { isStopped = true; isPaused = false; sendStatus('Остановка…'); } break;
+
+    // Fired by background.js when chrome.downloads.onChanged signals completion or interruption for a download we initiated.
+    case 'DOWNLOAD_DONE': {
+      const fn = downloadResolvers.get(msg.downloadId);
+      if (fn) {
+        downloadResolvers.delete(msg.downloadId);
+        fn(msg.success);
+      }
+      break;
+    }
 
     case 'GET_STATE': {
       const unit    = getUnitId();
@@ -1058,4 +1115,4 @@ ensureSettings().then(async () => {
   }
 });
 
-log('content-script loaded (v2.2.6)');
+log('content-script loaded (v2.5.5)');

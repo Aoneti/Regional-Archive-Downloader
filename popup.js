@@ -129,13 +129,12 @@ function showSummary(kind, extra = {}) {
     items.push(['Скорость', `${Math.round(downloadedPages / elapsed * 60)} стр/мин`]);
   if (isPDF) items.push(['Формат', 'PDF-файл']);
 
-  // Definition-list: ключ muted, значение bold
   summaryList.innerHTML = items
     .map(([k, v]) => `<div class="summary-item"><span class="summary-key">${k}</span><span class="summary-val">${v}</span></div>`)
     .join('');
 
   summaryCard.classList.remove('visible');
-  void summaryCard.offsetHeight; // принудительный reflow — перезапускает анимацию
+  void summaryCard.offsetHeight;
   summaryCard.classList.add('visible');
 }
 
@@ -143,17 +142,14 @@ function hideSummary() { summaryCard.classList.remove('visible'); }
 
 // ── Баннер и видимость секций ─────────────────────────────────────────────────
 
-// Элементы, которые скрываются когда не архивная страница
 const archiveOnlyEls = [actionsSection, mainSep, rangeSection, notesSection, exportSection, historySection];
 
 function setArchivePage(isArchive) {
   isArchivePage = isArchive;
 
-  // Баннер показывается только при не-архивной странице
   bannerNotArchive.classList.toggle('warn', !isArchive);
   bannerNotArchive.style.display = isArchive ? 'none' : '';
 
-  // Скрываем/показываем все зависящие от архива секции
   archiveOnlyEls.forEach(el => el.classList.toggle('hidden', !isArchive));
 
   btnAll.disabled     = !isArchive || isRunning;
@@ -290,7 +286,6 @@ function setProgress(percent, current, total) {
   }
 }
 
-// Плавное завершение прогресс-бара — Promise резолвится после CSS-анимации
 function completeProgressBar() {
   return new Promise(resolve => {
     progressBar.classList.remove('active');
@@ -386,26 +381,17 @@ notesArea.addEventListener('input', onNotesInput);
 
 // ── Унифицированные аккордеоны ────────────────────────────────────────────────
 
-function bindAccordion(toggleEl, sectionEl) {
+function bindAccordion(toggleEl, sectionEl, onOpen) {
   toggleEl.addEventListener('click', () => {
     const isOpen = sectionEl.classList.toggle('open');
     toggleEl.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen && onOpen) onOpen();
   });
 }
 
-bindAccordion(notesToggle,   notesSection);
+bindAccordion(notesToggle,   notesSection,  () => notesArea.focus());
 bindAccordion(exportToggle,  exportSection);
-bindAccordion(historyToggle, historySection);
-
-// Открытие заметок фокусирует textarea
-notesToggle.addEventListener('click', () => {
-  if (notesSection.classList.contains('open')) notesArea.focus();
-});
-
-// История — подгружает данные при открытии
-historyToggle.addEventListener('click', () => {
-  if (historySection.classList.contains('open')) loadHistory();
-});
+bindAccordion(historyToggle, historySection, loadHistory);
 
 // ── Экспорт метаданных ────────────────────────────────────────────────────────
 
@@ -428,7 +414,7 @@ function formatCSV(data) {
     ['Unit ID',      data.unitId     ],
     ['URL',          data.url        ],
     ['Текущая стр.', data.currentPage],
-    ['Дата доступа', formatDateRu(data.accessedAt)],
+    ['Дата доступа', formatDateRu(data.accessedAt)]
   ];
   const fieldRows = Object.entries(data.fields || {});
   const rows = [
@@ -459,7 +445,7 @@ function formatBibTeX(data) {
     `@misc{${key},`,
     `  title        = {${bib(data.title || 'Без названия')}},`,
     `  institution  = {${bib(data.archive)}},`,
-    `  year         = {${year}},`,
+    `  year         = {${year}},`
   ];
   if (mon) lines.push(`  month        = {${mon}},`);
   lines.push(`  url          = {${bib(data.url)}},`);
@@ -480,7 +466,12 @@ function formatDateRu(iso) {
 
 function fetchMetaAndExport(callback) {
   sendToActiveTab({ type: 'GET_METADATA' }, response => {
-    if (chrome.runtime.lastError || !response) { showToast('Ошибка: нет связи со страницей', 3000); return; }
+    if (chrome.runtime.lastError) {
+      console.warn('[YARchive] GET_METADATA error:', chrome.runtime.lastError.message);
+      showToast('Ошибка: нет связи со страницей', 3000);
+      return;
+    }
+    if (!response) { showToast('Ошибка: нет связи со страницей', 3000); return; }
     if (response.error) { showToast('Откройте документ на странице архива', 3000); return; }
     callback(response.data);
   });
@@ -528,7 +519,6 @@ function renderHistory(entries) {
     item.setAttribute('role', 'listitem');
 
     const fmt   = (entry.format || 'jpg').toLowerCase();
-    // CSS text-overflow: ellipsis справляется сам — JS-обрезка убрана
     const title = entry.title || `Документ ${entry.unit}`;
     const time  = relativeTime(entry.savedAt || entry.timestamp || 0);
     const pages = entry.pages ? `${entry.pages} стр.` : '';

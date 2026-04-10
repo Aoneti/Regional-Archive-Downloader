@@ -12,11 +12,13 @@ const ICONS_INACTIVE = {
   '128': 'icons/icon128_inactive.png'
 };
 
+const pendingDownloads = new Map();
+
 function suppressLastError() {
   void chrome.runtime.lastError;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
 
   if (msg.type === 'DOWNLOAD') {
@@ -29,11 +31,16 @@ chrome.runtime.onMessage.addListener((msg, _sender) => {
       (downloadId) => {
         if (chrome.runtime.lastError) {
           console.warn('[YARchive] download error:', chrome.runtime.lastError.message);
+          sendResponse({ downloadId: null, error: chrome.runtime.lastError.message });
+          return;
         }
-        void downloadId;
+        if (downloadId != null && sender?.tab?.id != null) {
+          pendingDownloads.set(downloadId, sender.tab.id);
+        }
+        sendResponse({ downloadId: downloadId ?? null });
       }
     );
-    return;
+    return true;
   }
 
   if (msg.type === 'SET_ICON') {
@@ -50,4 +57,24 @@ chrome.runtime.onMessage.addListener((msg, _sender) => {
     chrome.runtime.sendMessage(msg, suppressLastError);
     return;
   }
+});
+
+chrome.downloads.onChanged.addListener((delta) => {
+  if (!delta.state) return;
+  const { current } = delta.state;
+  if (current !== 'complete' && current !== 'interrupted') return;
+
+  const tabId = pendingDownloads.get(delta.id);
+  if (tabId == null) return;
+  pendingDownloads.delete(delta.id);
+
+  chrome.tabs.sendMessage(
+    tabId,
+    {
+      type:       'DOWNLOAD_DONE',
+      downloadId: delta.id,
+      success:    current === 'complete'
+    },
+    suppressLastError
+  );
 });
