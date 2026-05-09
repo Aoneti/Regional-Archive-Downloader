@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>YARchive Downloader</title>
+<title>Regional Archive Downloader</title>
 <style>
 /* ── Переменные ─────────────────────────────────────────────────────── */
 :root {
@@ -75,7 +75,7 @@ body {
 }
 .header-gear:hover { color: var(--text); background: var(--panel); }
 
-/* ── Toast (перенесён наверх — не перекрывает footer и контент) ──────── */
+/* ── Toast ──────────────────────────────────────────────────────────── */
 .toast {
   position: absolute; top: 45px; left: 14px; right: 14px;
   padding: 8px 12px; border-radius: var(--radius-sm);
@@ -86,11 +86,7 @@ body {
 html.dark .toast { background: #eee; color: #111; }
 .toast.show { opacity: 1; transform: translateY(0); }
 
-/* ── Баннер «не архивная страница» ───────────────────────────────────
-   Упрощён: только сообщение + кнопка настроек.
-   Список архивов живёт в настройках — масштабируется без правок попапа.
-   Когда активен — скрыты actions, sep, range, все аккордеоны.
-────────────────────────────────────────────────────────────────────── */
+/* ── Баннер «не архивная страница» ──────────────────────────────────── */
 .banner { display: none; }
 .banner.warn {
   display: flex; flex-direction: column;
@@ -130,11 +126,9 @@ html.dark .toast { background: #eee; color: #111; }
   transition: background 0.13s, border-color 0.13s, opacity 0.13s, box-shadow 0.13s;
 }
 
-/* Primary — единственный явный CTA */
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 
-/* Searching: вся кнопка сигнализирует «жди» через glow + приглушение */
 .btn-primary.searching {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
@@ -143,7 +137,6 @@ html.dark .toast { background: #eee; color: #111; }
 
 .btn-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 6px; }
 
-/* Secondary — ghost, не конкурирует с primary */
 .btn-secondary {
   background: transparent; border: 1px solid var(--border);
   color: var(--text-muted); font-weight: 500; font-size: 12px;
@@ -154,7 +147,6 @@ html.dark .toast { background: #eee; color: #111; }
   color: var(--text); border-color: var(--text-muted); background: var(--panel);
 }
 
-/* PDF — ghost, тихий */
 .btn-pdf {
   background: transparent; border: 1px solid var(--border);
   color: var(--text-muted); font-weight: 500; font-size: 12px;
@@ -209,7 +201,7 @@ html.dark .toast { background: #eee; color: #111; }
 .range-hints { display: flex; justify-content: space-between; padding: 0 7px; font-size: 10px; color: var(--text-muted); }
 .range-hints strong { color: var(--text); font-weight: 600; }
 
-/* ── Управление (скрыто в idle) ──────────────────────────────────────── */
+/* ── Управление ──────────────────────────────────────────────────────── */
 @keyframes controlsReveal {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -233,7 +225,7 @@ html.dark .toast { background: #eee; color: #111; }
 .btn-ctrl.danger:hover:not(:disabled) { background: var(--danger-hover); border-color: var(--danger-hover); }
 .btn-ctrl:disabled { opacity: 0.38; cursor: not-allowed; }
 
-/* ── Прогресс (скрыт в idle) ─────────────────────────────────────────── */
+/* ── Прогресс ────────────────────────────────────────────────────────── */
 @keyframes progressReveal {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -258,7 +250,7 @@ html.dark .toast { background: #eee; color: #111; }
 .progress-pct { font-size: 11px; font-weight: 700; color: var(--accent); flex-shrink: 0; margin-left: 6px; font-variant-numeric: tabular-nums; }
 .progress-eta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-/* ── Итоговая карточка (анимированное появление) ─────────────────────── */
+/* ── Итоговая карточка ───────────────────────────────────────────────── */
 @keyframes summaryAppear {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -270,15 +262,12 @@ html.dark .toast { background: #eee; color: #111; }
 }
 .summary-card.visible { display: block; animation: summaryAppear 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
 .summary-title { font-weight: 700; color: var(--accent); margin-bottom: 8px; font-size: 12px; }
-/* Definition-list: ключ muted слева, значение bold справа */
 .summary-list { display: flex; flex-direction: column; gap: 3px; }
 .summary-item { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; }
 .summary-key { color: var(--text-muted); flex-shrink: 0; margin-right: 8px; }
 .summary-val { color: var(--text); font-weight: 600; text-align: right; }
 
-/* ── Аккордеоны — единый унифицированный стиль ───────────────────────
-   Notes / Export / History используют одни и те же классы.
-────────────────────────────────────────────────────────────────────── */
+/* ── Аккордеоны ──────────────────────────────────────────────────────── */
 .accordion { border-top: 1px solid var(--border); }
 .accordion.hidden { display: none; }
 
@@ -297,7 +286,7 @@ html.dark .toast { background: #eee; color: #111; }
 .accordion-body { display: none; padding: 0 14px 12px; }
 .accordion.open .accordion-body { display: block; }
 
-/* Заметки — специфичные элементы */
+/* Заметки */
 .notes-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--accent); flex-shrink: 0; opacity: 0; transition: opacity 0.2s;
@@ -318,7 +307,7 @@ html.dark .toast { background: #eee; color: #111; }
 .notes-saved.visible { opacity: 1; }
 .notes-chars { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-/* История — специфичные элементы */
+/* История */
 .history-count {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
   font-size: 10px; font-weight: 600; padding: 1px 6px; color: var(--text-muted);
@@ -333,7 +322,6 @@ html.dark .toast { background: #eee; color: #111; }
 .history-info { flex: 1; overflow: hidden; }
 .history-title { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
 .history-meta { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
-/* Кнопка открыть — с hover-рамкой, ощущается как action */
 .history-open {
   background: none; border: 1px solid transparent; cursor: pointer;
   color: var(--text-muted); font-size: 14px; padding: 3px 6px;
@@ -342,7 +330,17 @@ html.dark .toast { background: #eee; color: #111; }
 }
 .history-open:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
 
-/* Экспорт — специфичные элементы */
+/* Note tags */
+.notes-tags {
+  display: none; flex-wrap: wrap; gap: 4px; margin-top: 5px;
+}
+.note-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 10px;
+  background: var(--accent-dim); color: var(--accent);
+  font-weight: 600; letter-spacing: 0.2px;
+}
+
+/* Экспорт */
 .export-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 .btn-export {
   padding: 7px 0; border-radius: var(--radius-sm);
@@ -359,7 +357,6 @@ html.dark .toast { background: #eee; color: #111; }
   display: flex; justify-content: space-between; align-items: center;
   padding: 8px 14px; border-top: 1px solid var(--border);
 }
-/* Версия почти невидима — служебная информация, не для пользователя */
 .footer-brand { font-size: 10px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.3px; opacity: 0.28; }
 .footer-keys { display: flex; gap: 6px; align-items: center; }
 .kbd { display: inline-block; font-size: 10px; padding: 1px 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); color: var(--text-muted); line-height: 1.5; }
@@ -380,16 +377,14 @@ html.dark .toast { background: #eee; color: #111; }
 
 <!-- Шапка -->
 <div class="header">
-  <span class="header-title">YARchive Downloader</span>
+  <span class="header-title">Regional Archive Downloader</span>
   <button class="header-gear" id="openOptions" title="Настройки (Alt+S)" aria-label="Открыть настройки">⚙️</button>
 </div>
 
-<!-- Toast (наверху, не перекрывает footer) -->
+<!-- Toast -->
 <div class="toast" id="toast" role="status" aria-live="assertive"></div>
 
-<!-- Баннер «не архивная страница»
-     Простой: сообщение + одна кнопка в настройки.
-     Когда активен — ниже показаны только footer (слайдер и аккордеоны скрыты). -->
+<!-- Баннер «не архивная страница» -->
 <div class="banner" id="bannerNotArchive" role="alert">
   <div class="banner-main">
     <span class="banner-icon">🗂️</span>
@@ -397,7 +392,7 @@ html.dark .toast { background: #eee; color: #111; }
       <div class="banner-title">Откройте документ в архиве</div>
       <div class="banner-text">
         Перейдите на страницу просмотра документа на одном из поддерживаемых сайтов.
-        Список архивов — в настройках расширения.
+        Список архивов в настройках расширения.
       </div>
     </div>
   </div>
@@ -406,7 +401,7 @@ html.dark .toast { background: #eee; color: #111; }
   </button>
 </div>
 
-<!-- Кнопки действий (скрыты при не-архивной странице) -->
+<!-- Кнопки действий -->
 <div class="actions" id="actionsSection">
   <button id="btnAll" class="btn btn-primary">
     <span class="spinner" aria-hidden="true"></span>
@@ -420,10 +415,10 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
-<!-- Разделитель (скрыт при не-архивной странице) -->
+<!-- Разделитель -->
 <div class="sep" id="mainSep"></div>
 
-<!-- Слайдер диапазона (скрыт при не-архивной странице) -->
+<!-- Слайдер диапазона -->
 <div class="range-section" id="rangeSection">
   <div class="range-row">
     <span class="range-label">Диапазон страниц</span>
@@ -447,7 +442,7 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
-<!-- Управление (скрыто в idle) -->
+<!-- Управление -->
 <div class="controls" id="controlsSection">
   <button id="btnPause" class="btn-ctrl" title="Пауза / Продолжить (Пробел)" disabled aria-label="Пауза">
     <span id="pauseIcon" aria-hidden="true">⏸</span>
@@ -458,7 +453,7 @@ html.dark .toast { background: #eee; color: #111; }
   </button>
 </div>
 
-<!-- Прогресс (скрыт в idle) -->
+<!-- Прогресс -->
 <div class="progress-section" id="progressSection" role="status" aria-live="polite">
   <div class="progress-track" role="progressbar"
        aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressRole">
@@ -477,7 +472,7 @@ html.dark .toast { background: #eee; color: #111; }
   <div class="summary-list" id="summaryList"></div>
 </div>
 
-<!-- Аккордеон: Заметки (скрыт при не-архивной странице) -->
+<!-- Заметки -->
 <div class="accordion" id="notesSection">
   <button class="accordion-toggle" id="notesToggle"
           aria-expanded="false" aria-controls="notesBody">
@@ -491,6 +486,7 @@ html.dark .toast { background: #eee; color: #111; }
     <textarea class="notes-area" id="notesArea"
       placeholder="Заметки по делу: имена, даты, страницы…"
       maxlength="4000" aria-label="Текст заметки"></textarea>
+    <div id="notesTags" class="notes-tags"></div>
     <div class="notes-footer">
       <span class="notes-saved" id="notesSaved" aria-live="polite">Сохранено</span>
       <span class="notes-chars" id="notesChars">0 / 4000</span>
@@ -498,7 +494,7 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
-<!-- Аккордеон: Экспорт метаданных (скрыт при не-архивной странице) -->
+<!-- Экспорт метаданных -->
 <div class="accordion" id="exportSection">
   <button class="accordion-toggle" id="exportToggle"
           aria-expanded="false" aria-controls="exportBody">
@@ -516,7 +512,7 @@ html.dark .toast { background: #eee; color: #111; }
   </div>
 </div>
 
-<!-- Аккордеон: История загрузок (скрыт при не-архивной странице) -->
+<!-- История загрузок -->
 <div class="accordion" id="historySection">
   <button class="accordion-toggle" id="historyToggle" aria-expanded="false">
     <span>Недавние загрузки</span>
@@ -532,7 +528,7 @@ html.dark .toast { background: #eee; color: #111; }
 
 <!-- Подвал -->
 <div class="footer">
-  <span class="footer-brand">v2.5.5</span>
+  <span class="footer-brand">RAD v2.9.0</span>
   <div class="footer-keys">
     <kbd class="kbd">Пробел</kbd><span class="footer-key-hint">пауза</span>
     <kbd class="kbd">Esc</kbd><span class="footer-key-hint">стоп</span>

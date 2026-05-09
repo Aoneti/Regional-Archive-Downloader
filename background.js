@@ -14,23 +14,35 @@ const ICONS_INACTIVE = {
 
 const pendingDownloads = new Map();
 
-function suppressLastError() {
-  void chrome.runtime.lastError;
+function suppressLastError() { void chrome.runtime.lastError; }
+
+// ── Бейдж на иконке ───────────────────────────────────────────────────────────
+
+function setBadge(text, color) {
+  chrome.action.setBadgeText({ text: text ? String(text) : '' }, suppressLastError);
+  if (text) chrome.action.setBadgeBackgroundColor({ color: color || '#7FBE00' }, suppressLastError);
 }
+
+// ── Уведомления ───────────────────────────────────────────────────────────────
+
+function showNotification(title, message) {
+  chrome.notifications.create('rad_done_' + Date.now(), {
+    type: 'basic', iconUrl: 'icons/icon128.png',
+    title, message, priority: 1
+  }, suppressLastError);
+}
+
+// ── Обработчик сообщений ──────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
 
   if (msg.type === 'DOWNLOAD') {
     chrome.downloads.download(
-      {
-        url:            msg.url,
-        filename:       msg.filename,
-        conflictAction: 'uniquify'
-      },
+      { url: msg.url, filename: msg.filename, conflictAction: 'uniquify' },
       (downloadId) => {
         if (chrome.runtime.lastError) {
-          console.warn('[YARchive] download error:', chrome.runtime.lastError.message);
+          console.warn('[RAD] download error:', chrome.runtime.lastError.message);
           sendResponse({ downloadId: null, error: chrome.runtime.lastError.message });
           return;
         }
@@ -46,15 +58,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SET_ICON') {
     const path = msg.state === 'active' ? ICONS_ACTIVE : ICONS_INACTIVE;
     chrome.action.setIcon({ path }, () => {
-      if (chrome.runtime.lastError) {
-        console.warn('[YARchive] setIcon error:', chrome.runtime.lastError.message);
-      }
+      if (chrome.runtime.lastError) console.warn('[RAD] setIcon error:', chrome.runtime.lastError.message);
     });
+    if (msg.state !== 'active') setBadge('');
     return;
   }
 
   if (msg.type === 'STATUS' || msg.type === 'PROGRESS' || msg.type === 'DONE') {
     chrome.runtime.sendMessage(msg, suppressLastError);
+
+    if (msg.type === 'PROGRESS' && msg.percent != null) {
+      const pct = Math.round(msg.percent);
+      setBadge(pct > 0 && pct < 100 ? pct + '%' : '');
+    }
+
+    if (msg.type === 'DONE') {
+      setBadge('');
+      const text      = msg.text || '';
+      const isStopped = /^Остановлено|^PDF: остановлено/i.test(text);
+      const isError   = /^Ошибка|^PDF: ошибка/i.test(text);
+      if (!isStopped && !isError && text) {
+        showNotification(
+          msg.isPDF ? 'PDF готов — RAD' : 'Загрузка завершена — RAD',
+          text.replace(/^(Готово|PDF готов):\s*/i, '') || 'Готово'
+        );
+      } else if (isError) {
+        showNotification('Ошибка — RAD', text.replace(/^(Ошибка|PDF: ошибка)[: ]*/i, ''));
+      }
+    }
     return;
   }
 });
@@ -63,18 +94,8 @@ chrome.downloads.onChanged.addListener((delta) => {
   if (!delta.state) return;
   const { current } = delta.state;
   if (current !== 'complete' && current !== 'interrupted') return;
-
   const tabId = pendingDownloads.get(delta.id);
   if (tabId == null) return;
   pendingDownloads.delete(delta.id);
-
-  chrome.tabs.sendMessage(
-    tabId,
-    {
-      type:       'DOWNLOAD_DONE',
-      downloadId: delta.id,
-      success:    current === 'complete'
-    },
-    suppressLastError
-  );
+  chrome.tabs.sendMessage(tabId, { type: 'DOWNLOAD_DONE', downloadId: delta.id, success: current === 'complete' }, suppressLastError);
 });

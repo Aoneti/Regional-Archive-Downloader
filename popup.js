@@ -342,7 +342,7 @@ function sendToActiveTab(message, cb) {
 
 const NOTES_MAX = 4000;
 
-function notesKey(unit) { return `yar_notes_${unit}`; }
+function notesKey(unit) { return `rad_notes_${unit}`; }
 
 let notesSaveTimer  = null;
 let notesSavedTimer = null;
@@ -353,15 +353,33 @@ function flashNotesSaved() {
   notesSavedTimer = setTimeout(() => notesSaved.classList.remove('visible'), 1800);
 }
 
+function parseNoteTags(text) {
+  return [...new Set((text.match(/#[\w\uа-яА-ЯёЁ]+/g) || []).map(t => t.toLowerCase()))];
+}
+
+function renderNoteTags(tags) {
+  const container = document.getElementById('notesTags');
+  if (!container) return;
+  container.innerHTML = tags.map(t =>
+    `<span class="note-tag">${t}</span>`
+  ).join('');
+  container.style.display = tags.length ? 'flex' : 'none';
+}
+
 function onNotesInput() {
   const text = notesArea.value;
   notesChars.textContent = `${text.length} / ${NOTES_MAX}`;
   notesDot.classList.toggle('visible', text.trim().length > 0);
 
+  // Parse and show tags live
+  const tags = parseNoteTags(text);
+  renderNoteTags(tags);
+
   if (notesSaveTimer) clearTimeout(notesSaveTimer);
   notesSaveTimer = setTimeout(() => {
     if (!currentUnit) return;
-    chrome.storage.local.set({ [notesKey(currentUnit)]: text }, () => {
+    const record = { text, tags, updatedAt: Date.now() };
+    chrome.storage.local.set({ [notesKey(currentUnit)]: record }, () => {
       if (!chrome.runtime.lastError) flashNotesSaved();
     });
   }, 800);
@@ -370,10 +388,14 @@ function onNotesInput() {
 function loadNotes(unit) {
   if (!unit) return;
   chrome.storage.local.get({ [notesKey(unit)]: '' }, data => {
-    const text = data[notesKey(unit)] || '';
+    const raw  = data[notesKey(unit)];
+    // Handle both legacy string format and new {text, tags} format
+    const text = typeof raw === 'object' && raw !== null ? (raw.text || '') : (raw || '');
+    const tags = typeof raw === 'object' && raw !== null ? (raw.tags || []) : parseNoteTags(text);
     notesArea.value = text;
     notesChars.textContent = `${text.length} / ${NOTES_MAX}`;
     notesDot.classList.toggle('visible', text.trim().length > 0);
+    renderNoteTags(tags);
   });
 }
 
@@ -513,7 +535,7 @@ function renderHistory(entries) {
   if (!entries.length) { historyEmpty.style.display = 'block'; return; }
   historyEmpty.style.display = 'none';
 
-  entries.slice(0, 8).forEach(entry => {
+  entries.slice(0, 50).forEach(entry => {
     const item  = document.createElement('div');
     item.className = 'history-item';
     item.setAttribute('role', 'listitem');
@@ -544,8 +566,8 @@ function renderHistory(entries) {
 }
 
 function loadHistory() {
-  chrome.storage.local.get({ yar_history: [] }, data => {
-    const entries = Array.isArray(data.yar_history) ? data.yar_history : [];
+  chrome.storage.local.get({ rad_history: [] }, data => {
+    const entries = Array.isArray(data.rad_history) ? data.rad_history : [];
     renderHistory(entries);
   });
 }
@@ -695,8 +717,8 @@ chrome.runtime.onMessage.addListener(msg => {
     updateRangeUI();
   });
 
-  chrome.storage.local.get({ yar_history: [] }, data => {
-    const entries = Array.isArray(data.yar_history) ? data.yar_history : [];
+  chrome.storage.local.get({ rad_history: [] }, data => {
+    const entries = Array.isArray(data.rad_history) ? data.rad_history : [];
     historyCount.textContent = entries.length;
   });
 
