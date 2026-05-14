@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Regional Archive Downloader",
-  "version": "2.9.0",
+  "version": "3.0.0",
   "description": "Скачивание документов из региональных архивов России",
   "permissions": [
     "downloads",
@@ -91,7 +91,8 @@
     "https://catalog.gosarhivrt.ru/*",
     "https://mkukga.admkrsk.ru/*",
     "https://krasmun.krasarh.ru/*",
-    "https://altarchives.ru/*"
+    "https://altarchives.ru/*",
+	"https://sogaspi.regsamarh.ru/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
@@ -197,7 +198,8 @@
         "https://catalog.gosarhivrt.ru/*",
         "https://mkukga.admkrsk.ru/*",
         "https://krasmun.krasarh.ru/*",
-        "https://altarchives.ru/*"
+        "https://altarchives.ru/*",
+		"https://sogaspi.regsamarh.ru/*"
       ],
       "js": [
         "content-script.js"

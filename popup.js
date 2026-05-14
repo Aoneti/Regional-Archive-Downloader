@@ -23,8 +23,8 @@ const rangeTrack       = document.getElementById('rangeTrack');
 const rangeFill        = document.getElementById('rangeFill');
 const thumbStart       = document.getElementById('thumbStart');
 const thumbEnd         = document.getElementById('thumbEnd');
-const hintFrom         = document.getElementById('hintFrom');
-const hintToWrap       = document.getElementById('hintToWrap');
+const hintFromInput    = document.getElementById('hintFromInput');
+const hintToInput      = document.getElementById('hintToInput');
 const actionsSection   = document.getElementById('actionsSection');
 const mainSep          = document.getElementById('mainSep');
 const rangeSection     = document.getElementById('rangeSection');
@@ -52,6 +52,28 @@ const historyToggle  = document.getElementById('historyToggle');
 const historyList    = document.getElementById('historyList');
 const historyCount   = document.getElementById('historyCount');
 const historyEmpty   = document.getElementById('historyEmpty');
+const historyBody    = document.getElementById('historyBody');
+const historyStats   = document.getElementById('historyStats');
+const historyFilterFormat = document.getElementById('historyFilterFormat');
+const historyExportCSV    = document.getElementById('historyExportCSV');
+
+// Projects
+const projectsSection   = document.getElementById('projectsSection');
+const projectsToggle    = document.getElementById('projectsToggle');
+const projectsBody      = document.getElementById('projectsBody');
+const projectsCount     = document.getElementById('projectsCount');
+const projectsList      = document.getElementById('projectsList');
+const projectsEmpty     = document.getElementById('projectsEmpty');
+const projectNameInput  = document.getElementById('projectNameInput');
+const btnProjectAdd     = document.getElementById('btnProjectAdd');
+
+// Notes search overlay
+const notesSearchOverlay = document.getElementById('notesSearchOverlay');
+const notesSearchClose   = document.getElementById('notesSearchClose');
+const notesSearchInput   = document.getElementById('notesSearchInput');
+const notesSearchResults = document.getElementById('notesSearchResults');
+const notesSearchEmpty   = document.getElementById('notesSearchEmpty');
+const btnNotesSearch     = document.getElementById('btnNotesSearch');
 
 // ── Состояние ─────────────────────────────────────────────────────────────────
 
@@ -142,7 +164,8 @@ function hideSummary() { summaryCard.classList.remove('visible'); }
 
 // ── Баннер и видимость секций ─────────────────────────────────────────────────
 
-const archiveOnlyEls = [actionsSection, mainSep, rangeSection, notesSection, exportSection, historySection];
+// Только кнопки действий скрываются вне архивной страницы; заметки/история остаются
+const archiveOnlyEls = [actionsSection, mainSep, rangeSection];
 
 function setArchivePage(isArchive) {
   isArchivePage = isArchive;
@@ -183,11 +206,10 @@ function updateRangeUI() {
   rangeFill.style.left  = pageToPercent(lo);
   rangeFill.style.width = ((hi - lo) / (rangeMax - RANGE_MIN) * 100).toFixed(2) + '%';
 
-  hintFrom.textContent = lo;
+  hintFromInput.value = lo;
   const isAutoEnd = (toPage === null || hi >= rangeMax);
-  hintToWrap.innerHTML = isAutoEnd
-    ? `до <strong>конца</strong>`
-    : `до стр. <strong>${hi}</strong>`;
+  hintToInput.value       = isAutoEnd ? '' : String(hi);
+  hintToInput.placeholder = isAutoEnd ? 'конца' : '';
 
   thumbStart.setAttribute('aria-valuenow', lo);
   thumbStart.setAttribute('aria-valuemax', hi - 1);
@@ -245,14 +267,65 @@ function bindThumb(thumb, which) {
 bindThumb(thumbStart, 'start');
 bindThumb(thumbEnd,   'end');
 
+// Editable hint inputs
+hintFromInput.addEventListener('change', () => {
+  const v = parseInt(hintFromInput.value);
+  if (isNaN(v) || isRunning || !isArchivePage) { updateRangeUI(); return; }
+  fromPage = Math.max(RANGE_MIN, Math.min(v, (toPage ?? rangeMax) - 1));
+  updateRangeUI();
+  saveRangePref();
+});
+hintFromInput.addEventListener('blur', () => { hintFromInput.value = fromPage; });
+
+hintToInput.addEventListener('change', () => {
+  const raw = hintToInput.value.trim();
+  if (isRunning || !isArchivePage) { updateRangeUI(); return; }
+  if (!raw) {
+    toPage = null;
+  } else {
+    const v = parseInt(raw);
+    if (isNaN(v)) { updateRangeUI(); return; }
+    toPage = Math.max(fromPage + 1, Math.min(v, rangeMax));
+    if (toPage >= rangeMax) toPage = null;
+  }
+  updateRangeUI();
+  saveRangePref();
+});
+hintToInput.addEventListener('blur', () => {
+  hintToInput.value = (toPage === null || toPage >= rangeMax) ? '' : String(toPage);
+});
+
 rangeTrack.addEventListener('dblclick', () => {
   if (isRunning || !isArchivePage) return;
   fromPage = 1; toPage = null;
   updateRangeUI();
   sendToActiveTab({ type: 'CLEAR_RESUME' });
+  saveRangePref();
   showToast('Диапазон и прогресс сброшены', 1600);
 });
 
+
+// ── Персистентность диапазона страниц ────────────────────────────────────────
+
+function saveRangePref() {
+  if (!currentUnit) return;
+  chrome.storage.local.set({
+    [`rad_range_${currentUnit}`]: { from: fromPage, to: toPage, savedAt: Date.now() }
+  });
+}
+
+function loadRangePref(unit) {
+  if (!unit) return;
+  chrome.storage.local.get({ [`rad_range_${unit}`]: null }, data => {
+    const pref = data[`rad_range_${unit}`];
+    if (!pref) return;
+    const ageMs = Date.now() - (pref.savedAt || 0);
+    if (ageMs > 7 * 24 * 60 * 60 * 1000) return; // Ignore if older than 7 days
+    fromPage = pref.from ?? 1;
+    toPage   = pref.to   ?? null;
+    updateRangeUI();
+  });
+}
 // ── ETA ───────────────────────────────────────────────────────────────────────
 
 function updateETA() {
@@ -389,7 +462,6 @@ function loadNotes(unit) {
   if (!unit) return;
   chrome.storage.local.get({ [notesKey(unit)]: '' }, data => {
     const raw  = data[notesKey(unit)];
-    // Handle both legacy string format and new {text, tags} format
     const text = typeof raw === 'object' && raw !== null ? (raw.text || '') : (raw || '');
     const tags = typeof raw === 'object' && raw !== null ? (raw.tags || []) : parseNoteTags(text);
     notesArea.value = text;
@@ -411,9 +483,10 @@ function bindAccordion(toggleEl, sectionEl, onOpen) {
   });
 }
 
-bindAccordion(notesToggle,   notesSection,  () => notesArea.focus());
-bindAccordion(exportToggle,  exportSection);
-bindAccordion(historyToggle, historySection, loadHistory);
+bindAccordion(notesToggle,    notesSection,    () => notesArea.focus());
+bindAccordion(exportToggle,   exportSection);
+bindAccordion(historyToggle,  historySection,  loadHistory);
+bindAccordion(projectsToggle, projectsSection, () => loadProjects(renderProjects));
 
 // ── Экспорт метаданных ────────────────────────────────────────────────────────
 
@@ -489,7 +562,7 @@ function formatDateRu(iso) {
 function fetchMetaAndExport(callback) {
   sendToActiveTab({ type: 'GET_METADATA' }, response => {
     if (chrome.runtime.lastError) {
-      console.warn('[YARchive] GET_METADATA error:', chrome.runtime.lastError.message);
+      console.warn('[RAD] GET_METADATA error:', chrome.runtime.lastError.message);
       showToast('Ошибка: нет связи со страницей', 3000);
       return;
     }
@@ -514,6 +587,268 @@ exportBibTeX.addEventListener('click', () => {
   fetchMetaAndExport(data => { downloadTextFile(safeFilename(data, 'bib'), formatBibTeX(data), 'text/plain'); showToast('BibTeX сохранён', 2000); });
 });
 
+
+
+// ── Баннер «заметки чужого дела» ─────────────────────────────────────────────
+
+function showNotesUnitBanner(selectedUnit, originalUnit) {
+  // Remove any existing banner first
+  const existing = document.getElementById('notesBanner');
+  if (existing) existing.remove();
+
+  if (!selectedUnit || selectedUnit === originalUnit) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'notesBanner';
+  banner.className = 'notes-unit-banner';
+
+  // Try to find the URL for this unit from projects
+  chrome.storage.local.get({ rad_projects: [] }, data => {
+    const projects = Array.isArray(data.rad_projects) ? data.rad_projects : [];
+    let unitUrl = null;
+    for (const p of projects) {
+      if (p.unitUrls?.[selectedUnit]) { unitUrl = p.unitUrls[selectedUnit]; break; }
+    }
+
+    const unitRef = unitUrl
+      ? `<a href="${unitUrl}" target="_blank" class="notes-banner-link" title="Открыть документ в новой вкладке">Unit ${selectedUnit} ↗</a>`
+      : `<span class="notes-banner-unit">Unit ${selectedUnit}</span>`;
+
+    banner.innerHTML = `
+      <span class="notes-banner-text">Заметки к ${unitRef}</span>
+      <button class="notes-banner-reset" title="Вернуться к заметкам текущего документа" aria-label="Вернуться">
+        Вернуться ⤶
+      </button>
+    `;
+
+    banner.querySelector('.notes-banner-reset').addEventListener('click', () => {
+      banner.remove();
+      // Restore notes for the real current document
+      currentUnit = originalUnit;
+      if (originalUnit) loadNotes(originalUnit);
+      else { notesArea.value = ''; renderNoteTags([]); notesChars.textContent = '0 / 4000'; notesDot.classList.remove('visible'); }
+    });
+
+    // Insert at top of notesBody
+    notesBody.insertBefore(banner, notesBody.firstChild);
+  });
+}
+
+// ── Поиск по всем заметкам ────────────────────────────────────────────────────
+
+function openNotesSearch() {
+  notesSearchOverlay.classList.add('open');
+  notesSearchInput.focus();
+  renderNotesSearchResults('');
+}
+
+function closeNotesSearch() {
+  notesSearchOverlay.classList.remove('open');
+  notesSearchInput.value = '';
+}
+
+function renderNotesSearchResults(query) {
+  const q = query.toLowerCase().trim();
+  notesSearchResults.querySelectorAll('.notes-search-result').forEach(el => el.remove());
+
+  // Collect all rad_notes_* keys from storage
+  chrome.storage.local.get(null, all => {
+    const results = [];
+    for (const [key, val] of Object.entries(all)) {
+      if (!key.startsWith('rad_notes_')) continue;
+      const unit = key.replace('rad_notes_', '');
+      const text = typeof val === 'object' && val !== null ? (val.text || '') : (val || '');
+      const tags = typeof val === 'object' && val !== null ? (val.tags || []) : parseNoteTags(text);
+      if (!text.trim()) continue;
+      if (!q || text.toLowerCase().includes(q) || tags.some(t => t.includes(q))) {
+        results.push({ unit, text, tags });
+      }
+    }
+
+    notesSearchEmpty.style.display = results.length ? 'none' : 'block';
+    notesSearchEmpty.textContent   = q ? 'Ничего не найдено' : 'Начните вводить запрос';
+
+    results.forEach(({ unit, text, tags }) => {
+      const el = document.createElement('div');
+      el.className = 'notes-search-result';
+      const snippet = text.length > 120 ? text.slice(0, 120) + '…' : text;
+      const qSafe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const hl = q ? snippet.replace(new RegExp(qSafe, 'gi'), m => `<mark>${m}</mark>`) : snippet;
+
+      el.innerHTML = `
+        <div class="notes-result-unit">Unit ${unit}</div>
+        <div class="notes-result-text">${hl}</div>
+        ${tags.length ? `<div class="notes-result-tags">${tags.map(t => `<span class="notes-result-tag">${t}</span>`).join('')}</div>` : ''}
+      `;
+      el.addEventListener('click', () => {
+        closeNotesSearch();
+        // Load notes from the selected unit — show link to open its document
+        const prevUnit = currentUnit;
+        currentUnit = unit;
+        loadNotes(unit);
+        if (!notesSection.classList.contains('open')) notesToggle.click();
+        // Show "viewing notes for unit X" banner with link + reset
+        showNotesUnitBanner(unit, prevUnit);
+      });
+      notesSearchResults.appendChild(el);
+    });
+  });
+}
+
+if (btnNotesSearch) {
+  btnNotesSearch.addEventListener('click', openNotesSearch);
+}
+if (notesSearchClose) {
+  notesSearchClose.addEventListener('click', closeNotesSearch);
+}
+if (notesSearchInput) {
+  let searchDebounce = null;
+  notesSearchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => renderNotesSearchResults(notesSearchInput.value), 250);
+  });
+}
+
+// ── Проекты ───────────────────────────────────────────────────────────────────
+
+const PROJECTS_KEY = 'rad_projects';
+
+function loadProjects(cb) {
+  chrome.storage.local.get({ [PROJECTS_KEY]: [] }, data => {
+    cb(Array.isArray(data[PROJECTS_KEY]) ? data[PROJECTS_KEY] : []);
+  });
+}
+
+function saveProjects(projects, cb) {
+  chrome.storage.local.set({ [PROJECTS_KEY]: projects }, cb);
+}
+
+function renderProjects(projects) {
+  projectsCount.textContent = projects.length;
+  projectsList.querySelectorAll('.project-item').forEach(el => el.remove());
+  projectsEmpty.style.display = projects.length ? 'none' : 'block';
+
+  projects.forEach((proj, idx) => {
+    const el = document.createElement('div');
+    el.className = 'project-item';
+
+    const units = (proj.units || []);
+    const statusLabel = proj.status === 'done' ? '✓ Готово' : '● В работе';
+    const statusClass = proj.status === 'done' ? '' : 'active';
+    const color       = proj.color || '#7FBE00';
+
+    el.innerHTML = `
+      <div class="project-item-head">
+        <span class="project-color-indicator" style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;margin-right:2px"></span>
+        <span class="project-item-name">${proj.name}</span>
+        <button class="project-status ${statusClass}" data-idx="${idx}" title="Переключить статус">${statusLabel}</button>
+        <button class="project-add-unit-btn" data-idx="${idx}" title="Добавить текущий документ">+ дело</button>
+        <button class="project-delete-btn" data-idx="${idx}" title="Удалить проект" aria-label="Удалить">✕</button>
+      </div>
+      ${units.length ? `<div class="project-units">${units.map(u => {
+        const unitUrl = proj.unitUrls?.[u];
+        return unitUrl
+          ? `<a class="project-unit-tag project-unit-link" href="${unitUrl}" title="Открыть документ" target="_blank">${u}</a>`
+          : `<span class="project-unit-tag">${u}</span>`;
+      }).join('')}</div>` : ''}
+    `;
+
+    el.querySelector('.project-status').addEventListener('click', e => {
+      const i = parseInt(e.currentTarget.dataset.idx);
+      loadProjects(ps => {
+        ps[i].status = ps[i].status === 'done' ? 'active' : 'done';
+        saveProjects(ps, () => renderProjects(ps));
+      });
+    });
+
+    el.querySelector('.project-add-unit-btn').addEventListener('click', e => {
+      const i = parseInt(e.currentTarget.dataset.idx);
+      if (!currentUnit) { showToast('Откройте документ в архиве', 2000); return; }
+      loadProjects(ps => {
+        if (!ps[i].units) ps[i].units = [];
+        if (!ps[i].units.includes(currentUnit)) {
+          if (!ps[i].unitUrls) ps[i].unitUrls = {};
+          ps[i].units.push(currentUnit);
+          // Store current tab URL so unit tag becomes clickable
+          chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+            if (tabs?.[0]?.url) ps[i].unitUrls[currentUnit] = tabs[0].url;
+            saveProjects(ps, () => { renderProjects(ps); showToast('Документ добавлен в проект', 1800); });
+          });
+        } else {
+          showToast('Документ уже в этом проекте', 1800);
+        }
+      });
+    });
+
+    el.querySelector('.project-delete-btn').addEventListener('click', e => {
+      const i = parseInt(e.currentTarget.dataset.idx);
+      loadProjects(ps => {
+        ps.splice(i, 1);
+        saveProjects(ps, () => renderProjects(ps));
+      });
+    });
+
+    projectsList.appendChild(el);
+  });
+}
+
+function addProject(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  loadProjects(ps => {
+    ps.unshift({ id: Date.now(), name: trimmed, status: 'active', units: [], createdAt: Date.now() });
+    saveProjects(ps, () => { renderProjects(ps); projectNameInput.value = ''; });
+  });
+}
+
+if (btnProjectAdd) {
+  btnProjectAdd.addEventListener('click', () => addProject(projectNameInput.value));
+  projectNameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') addProject(projectNameInput.value);
+  });
+}
+
+// ── Расширенная история ────────────────────────────
+
+function computeHistoryStats(entries) {
+  const totalPages    = entries.reduce((s, e) => s + (e.pages || 0), 0);
+  const archiveCounts = {};
+  entries.forEach(e => {
+    const host = (() => { try { return new URL(e.url || '').hostname; } catch { return '?'; } })();
+    archiveCounts[host] = (archiveCounts[host] || 0) + 1;
+  });
+  const topArchive = Object.entries(archiveCounts).sort((a,b) => b[1]-a[1])[0];
+
+  if (!historyStats) return;
+  historyStats.innerHTML = `
+    <div class="history-stat-row">
+      <span>Всего загрузок</span><span class="history-stat-val">${entries.length}</span>
+    </div>
+    <div class="history-stat-row">
+      <span>Страниц скачано</span><span class="history-stat-val">${totalPages.toLocaleString('ru-RU')}</span>
+    </div>
+    ${topArchive ? `<div class="history-stat-row"><span>Любимый архив</span><span class="history-stat-val" title="${topArchive[0]}">${topArchive[0].replace('www.', '').slice(0, 22)}</span></div>` : ''}
+  `;
+}
+
+function exportHistoryCSV(entries) {
+  const header = ['Дата', 'Название', 'URL', 'Страниц', 'Формат'];
+  const rows = entries.map(e => [
+    new Date(e.savedAt || e.timestamp || 0).toLocaleDateString('ru-RU'),
+    e.title || '',
+    e.url || '',
+    e.pages || '',
+    (e.format || 'jpg').toUpperCase()
+  ]);
+  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'rad_history.csv'; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 10_000);
+  showToast('История экспортирована в CSV', 2000);
+}
 // ── История загрузок ──────────────────────────────────────────────────────────
 
 function relativeTime(ts) {
@@ -567,11 +902,27 @@ function renderHistory(entries) {
 
 function loadHistory() {
   chrome.storage.local.get({ rad_history: [] }, data => {
-    const entries = Array.isArray(data.rad_history) ? data.rad_history : [];
+    const all     = Array.isArray(data.rad_history) ? data.rad_history : [];
+    const fmt     = historyFilterFormat?.value || '';
+    const entries = fmt ? all.filter(e => (e.format || 'jpg').toLowerCase() === fmt) : all;
     renderHistory(entries);
+    computeHistoryStats(all);
   });
 }
 
+
+// History filter and CSV export
+if (historyFilterFormat) {
+  historyFilterFormat.addEventListener('change', loadHistory);
+}
+if (historyExportCSV) {
+  historyExportCSV.addEventListener('click', () => {
+    chrome.storage.local.get({ rad_history: [] }, data => {
+      const entries = Array.isArray(data.rad_history) ? data.rad_history : [];
+      exportHistoryCSV(entries);
+    });
+  });
+}
 // ── Обработчики основных кнопок ───────────────────────────────────────────────
 
 btnAll.addEventListener('click', () => {
@@ -625,7 +976,8 @@ if (bannerSettingsBtn) {
 // ── Клавиатурные сокращения ───────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
-  if (e.target === thumbStart || e.target === thumbEnd || e.target === notesArea) return;
+  if (e.target === thumbStart || e.target === thumbEnd || e.target === notesArea ||
+      e.target === hintFromInput || e.target === hintToInput) return;
   if (e.code === 'Space'  && isRunning) { e.preventDefault(); btnPause.click(); }
   if (e.code === 'Escape' && isRunning) { e.preventDefault(); btnStop.click(); }
   if (e.altKey && e.code === 'KeyS')    { e.preventDefault(); chrome.runtime.openOptionsPage(); }
@@ -722,13 +1074,17 @@ chrome.runtime.onMessage.addListener(msg => {
     historyCount.textContent = entries.length;
   });
 
+  loadProjects(ps => {
+    if (projectsCount) projectsCount.textContent = ps.length;
+  });
+
   sendToActiveTab({ type: 'GET_STATE' }, state => {
     if (chrome.runtime.lastError || !state) { setArchivePage(false); return; }
 
     setArchivePage(!!state.isArchivePage);
 
     currentUnit = state.unit || null;
-    if (currentUnit) loadNotes(currentUnit);
+    if (currentUnit) { loadNotes(currentUnit); loadRangePref(currentUnit); }
 
     if (state.resumeState && !state.isRunning && state.isArchivePage) {
       const rs       = state.resumeState;

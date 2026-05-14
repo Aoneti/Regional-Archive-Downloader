@@ -75,11 +75,10 @@ function syncAdaptiveUI(enabled) {
   const slider = $('delaySlider');
   const input  = $('delayMs');
 
-  block.classList.toggle('on', enabled);
-  note.style.display = enabled ? 'block' : 'none';
-
-  slider.classList.toggle('muted', enabled);
-  input.classList.toggle('muted', enabled);
+  if (block) block.classList.toggle('on', enabled);
+  if (note) note.style.display = enabled ? 'block' : 'none';
+  if (slider) slider.classList.toggle('muted', enabled);
+  if (input) input.classList.toggle('muted', enabled);
 }
 
 // ── Загрузка настроек ─────────────────────────────────────────────────────────
@@ -218,4 +217,184 @@ document.addEventListener('DOMContentLoaded', () => {
   load();
   $('saveBtn') .addEventListener('click', save);
   $('resetBtn').addEventListener('click', resetDefaults);
+});
+// ── Управление проектами и заметками ─────────────────────────────────────────
+
+const PROJECT_COLORS = ['#7FBE00', '#3b82f6', '#f59e0b', '#ef4444'];
+const PROJECTS_KEY   = 'rad_projects';
+
+function loadProjectsMgmt() {
+  chrome.storage.local.get({ [PROJECTS_KEY]: [] }, data => {
+    const projects = Array.isArray(data[PROJECTS_KEY]) ? data[PROJECTS_KEY] : [];
+    renderProjectsMgmt(projects);
+  });
+}
+
+function saveProjectsMgmt(projects, cb) {
+  chrome.storage.local.set({ [PROJECTS_KEY]: projects }, cb);
+}
+
+function renderProjectsMgmt(projects) {
+  const list  = document.getElementById('projectsMgmtList');
+  const empty = document.getElementById('projectsMgmtEmpty');
+  if (!list) return;
+
+  // Remove old cards
+  list.querySelectorAll('.project-mgmt-item').forEach(el => el.remove());
+  empty.style.display = projects.length ? 'none' : 'block';
+
+  projects.forEach((proj, idx) => {
+    const color     = proj.color || PROJECT_COLORS[0];
+    const statusLbl = proj.status === 'done' ? '✓ Готово' : '● В работе';
+    const units     = proj.units || [];
+
+    const el = document.createElement('div');
+    el.className = 'project-mgmt-item';
+
+    el.innerHTML = `
+      <div class="project-mgmt-head">
+        <span class="project-color-dot" data-idx="${idx}" style="background:${color}" title="Выбрать цвет"></span>
+        <span class="project-mgmt-name">${proj.name}</span>
+        <span class="project-mgmt-status ${proj.status === 'done' ? '' : 'active'}" data-idx="${idx}">${statusLbl}</span>
+        <button class="project-mgmt-del" data-idx="${idx}" title="Удалить проект" aria-label="Удалить">✕</button>
+      </div>
+      <div class="color-picker-row" id="colorPicker_${idx}" style="display:none">
+        ${PROJECT_COLORS.map(c =>
+          `<span class="color-swatch${color === c ? ' selected' : ''}" style="background:${c}" data-color="${c}" data-idx="${idx}"></span>`
+        ).join('')}
+      </div>
+      <div class="project-units-mgmt">
+        ${units.map(u => {
+          const url = proj.unitUrls?.[u];
+          return `<span class="project-unit-mgmt-tag">
+            ${url ? `<a class="project-unit-mgmt-link" href="${url}" target="_blank" title="Открыть документ">${u} ↗</a>`
+                  : `<span>${u}</span>`}
+            <button class="project-unit-remove" data-unit="${u}" data-idx="${idx}" title="Исключить дело">✕</button>
+          </span>`;
+        }).join('')}
+      </div>
+    `;
+
+    // Toggle color picker
+    el.querySelector('.project-color-dot').addEventListener('click', () => {
+      const picker = document.getElementById(`colorPicker_${idx}`);
+      picker.style.display = picker.style.display === 'none' ? 'flex' : 'none';
+    });
+
+    // Select color
+    el.querySelectorAll('.color-swatch').forEach(sw => {
+      sw.addEventListener('click', () => {
+        const i = parseInt(sw.dataset.idx);
+        const c = sw.dataset.color;
+        chrome.storage.local.get({ [PROJECTS_KEY]: [] }, d => {
+          const ps = Array.isArray(d[PROJECTS_KEY]) ? d[PROJECTS_KEY] : [];
+          ps[i].color = c;
+          saveProjectsMgmt(ps, () => renderProjectsMgmt(ps));
+        });
+      });
+    });
+
+    // Toggle status
+    el.querySelector('.project-mgmt-status').addEventListener('click', e => {
+      const i = parseInt(e.currentTarget.dataset.idx);
+      chrome.storage.local.get({ [PROJECTS_KEY]: [] }, d => {
+        const ps = Array.isArray(d[PROJECTS_KEY]) ? d[PROJECTS_KEY] : [];
+        ps[i].status = ps[i].status === 'done' ? 'active' : 'done';
+        saveProjectsMgmt(ps, () => renderProjectsMgmt(ps));
+      });
+    });
+
+    // Remove project
+    el.querySelector('.project-mgmt-del').addEventListener('click', e => {
+      const i = parseInt(e.currentTarget.dataset.idx);
+      if (!confirm(`Удалить проект «${projects[i].name}»?`)) return;
+      chrome.storage.local.get({ [PROJECTS_KEY]: [] }, d => {
+        const ps = Array.isArray(d[PROJECTS_KEY]) ? d[PROJECTS_KEY] : [];
+        ps.splice(i, 1);
+        saveProjectsMgmt(ps, () => renderProjectsMgmt(ps));
+      });
+    });
+
+    // Remove unit from project
+    el.querySelectorAll('.project-unit-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i    = parseInt(btn.dataset.idx);
+        const unit = btn.dataset.unit;
+        chrome.storage.local.get({ [PROJECTS_KEY]: [] }, d => {
+          const ps = Array.isArray(d[PROJECTS_KEY]) ? d[PROJECTS_KEY] : [];
+          ps[i].units = (ps[i].units || []).filter(u => u !== unit);
+          if (ps[i].unitUrls) delete ps[i].unitUrls[unit];
+          saveProjectsMgmt(ps, () => renderProjectsMgmt(ps));
+        });
+      });
+    });
+
+    list.appendChild(el);
+  });
+}
+
+// ── Управление заметками ──────────────────────────────────────────────────────
+
+function loadNotesMgmt(query) {
+  const list  = document.getElementById('notesMgmtList');
+  const empty = document.getElementById('notesMgmtEmpty');
+  if (!list) return;
+
+  list.querySelectorAll('.notes-mgmt-item').forEach(el => el.remove());
+  const q = (query || '').toLowerCase().trim();
+
+  chrome.storage.local.get(null, all => {
+    const results = [];
+    for (const [key, val] of Object.entries(all)) {
+      if (!key.startsWith('rad_notes_')) continue;
+      const unit = key.replace('rad_notes_', '');
+      const text = typeof val === 'object' && val !== null ? (val.text || '') : (val || '');
+      const tags = typeof val === 'object' && val !== null ? (val.tags || []) : [];
+      if (!text.trim()) continue;
+      if (!q || text.toLowerCase().includes(q) || tags.some(t => t.includes(q))) {
+        results.push({ unit, text, tags, key });
+      }
+    }
+
+    empty.style.display = results.length ? 'none' : 'block';
+
+    results.forEach(({ unit, text, tags, key }) => {
+      const el = document.createElement('div');
+      el.className = 'notes-mgmt-item';
+
+      const snippet = text.length > 150 ? text.slice(0, 150) + '…' : text;
+
+      el.innerHTML = `
+        <div class="notes-mgmt-head">
+          <span class="notes-mgmt-unit">Unit ${unit}</span>
+          <button class="notes-mgmt-del" data-key="${key}" title="Удалить заметку" aria-label="Удалить">✕</button>
+        </div>
+        <div class="notes-mgmt-snippet">${snippet}</div>
+        ${tags.length ? `<div class="notes-mgmt-tags">${tags.map(t => `<span class="notes-mgmt-tag">${t}</span>`).join('')}</div>` : ''}
+      `;
+
+      el.querySelector('.notes-mgmt-del').addEventListener('click', e => {
+        const k = e.currentTarget.dataset.key;
+        if (!confirm('Удалить заметку?')) return;
+        chrome.storage.local.remove(k, () => loadNotesMgmt(query));
+      });
+
+      list.appendChild(el);
+    });
+  });
+}
+
+// ── Инициализация management sections ────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadProjectsMgmt();
+  loadNotesMgmt('');
+
+  const notesMgmtSearch = document.getElementById('notesMgmtSearch');
+  if (notesMgmtSearch) {
+    let debounce = null;
+    notesMgmtSearch.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => loadNotesMgmt(notesMgmtSearch.value), 250);
+    });
+  }
 });

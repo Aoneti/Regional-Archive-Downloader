@@ -303,8 +303,29 @@ function getUnitId() {
 }
 
 function getTitleFromPage() {
+  // VRR (Кострома, Приморье): заголовок в блоке меню
+  const vrrMenu = document.getElementById('VRR_MPM_TopMenu_Big_Name');
+  if (vrrMenu) {
+    const p = vrrMenu.querySelector('p');
+    const t = (p || vrrMenu).textContent.trim();
+    if (t) return t;
+  }
   const vrrName = document.getElementById('VRR_SV_name');
   if (vrrName?.textContent?.trim()) return vrrName.textContent.trim();
+
+  // Яндекс Архив: путь фонда/описи/дела в заголовке документа
+  const yaPath = document.querySelector('.OneDocumentHeader-Path');
+  if (yaPath) {
+    // Берём только текстовые узлы (без иконки копирования)
+    const text = Array.from(yaPath.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE || n.tagName === 'SPAN' && !n.querySelector('svg'))
+      .map(n => n.textContent)
+      .join('')
+      .replace(/\s+/g, ' ').trim();
+    if (text) return text;
+  }
+
+  // Стандартные варианты
   const h = document.querySelector('h1.title') || document.querySelector('h1');
   if (h?.textContent?.trim()) return h.textContent.trim();
   const misc = document.querySelector('.page-title, .document-title, .file-title');
@@ -317,33 +338,75 @@ function getTitleFromPage() {
 
 function collectPageMeta() {
   const lines = [];
-  document.querySelectorAll('table.table tr, .unit-info tr, .well tr').forEach(row => {
-    const cells = [...row.querySelectorAll('td, th')].map(c => c.textContent.trim()).filter(Boolean);
-    if (cells.length >= 2) lines.push(cells.join(': '));
-  });
-  if (!lines.length) {
-    document.querySelectorAll('.well p, .description p, .card-body p').forEach(p => {
+
+  // Вологодский архив и совместимые: .well содержит h1 (название) и <p> (фонд, даты, листы)
+  const well = document.querySelector('.well');
+  if (well) {
+    const h1 = well.querySelector('h1');
+    if (h1?.textContent?.trim()) lines.push(h1.textContent.trim());
+    well.querySelectorAll('p').forEach(p => {
       const t = p.textContent.trim();
       if (t) lines.push(t);
     });
   }
+
+  // Табличные данные (Ярославский и аналоги)
+  if (!lines.length) {
+    document.querySelectorAll('table.table tr, .unit-info tr').forEach(row => {
+      const cells = [...row.querySelectorAll('td, th')].map(c => c.textContent.trim()).filter(Boolean);
+      if (cells.length >= 2) lines.push(cells.join(': '));
+    });
+  }
+
+  // Запасной вариант
+  if (!lines.length) {
+    document.querySelectorAll('.description p, .card-body p').forEach(p => {
+      const t = p.textContent.trim();
+      if (t) lines.push(t);
+    });
+  }
+
   return lines.slice(0, 30).join('\n');
 }
 
 function collectStructuredMeta() {
   const result = {};
-  document.querySelectorAll('table.table tr, .unit-info tr, .well tr').forEach(row => {
-    const cells = [...row.querySelectorAll('td, th')]
-      .map(c => c.textContent.trim()).filter(Boolean);
-    if (cells.length >= 2) {
-      const key   = cells[0].replace(/:$/, '').trim();
-      const value = cells.slice(1).join('; ').trim();
-      if (key && value) result[key] = value;
-    }
-  });
+
+  // Вологодский архив: .well с h1 и <p> строками вида "Фонд № N. Оп.M. Д. K"
+  const well = document.querySelector('.well');
+  if (well) {
+    const h1 = well.querySelector('h1');
+    if (h1?.textContent?.trim()) result['Название'] = h1.textContent.trim();
+    well.querySelectorAll('p').forEach(p => {
+      const t = p.textContent.trim();
+      if (!t) return;
+      // Парсим строки вида "Фонд № 1063. Оп.12. Д. 10" или "Даты документов: ..."
+      const colonIdx = t.indexOf(':');
+      if (colonIdx > 0 && colonIdx < 30) {
+        result[t.slice(0, colonIdx).trim()] = t.slice(colonIdx + 1).trim();
+      } else {
+        // Строка "Фонд № N. Оп.M. Д. K" — кладём как реквизит дела
+        result['Реквизиты'] = t;
+      }
+    });
+  }
+
+  // Табличные данные
+  if (Object.keys(result).length < 2) {
+    document.querySelectorAll('table.table tr, .unit-info tr').forEach(row => {
+      const cells = [...row.querySelectorAll('td, th')]
+        .map(c => c.textContent.trim()).filter(Boolean);
+      if (cells.length >= 2) {
+        const key   = cells[0].replace(/:$/, '').trim();
+        const value = cells.slice(1).join('; ').trim();
+        if (key && value) result[key] = value;
+      }
+    });
+  }
+
   if (!Object.keys(result).length) {
     let idx = 0;
-    document.querySelectorAll('.well p, .description p, .card-body p').forEach(p => {
+    document.querySelectorAll('.description p, .card-body p').forEach(p => {
       const t = p.textContent.trim();
       if (t) result[`Описание ${++idx}`] = t;
     });
@@ -615,7 +678,7 @@ function getArsvoGuid() {
       const src = img.getAttribute('src') || '';
       const m   = src.match(GUID_RE);
       if (m) {
-        log('ARSVO GUID from tile URL:', m[1]);
+        log('ЭЛАР GUID из URL тайла:', m[1]);
         return m[1];
       }
     }
@@ -794,7 +857,7 @@ async function probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap) {
 async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   const { level, tileSize, overlap } = getArsvoTileParams();
 
-  progressCb?.(`ARSVO: сетка тайлов стр. ${pageIndex + 1}…`);
+  progressCb?.(`ЭЛАР: сетка тайлов стр. ${pageIndex + 1}…`);
   const { cols, rows } = await probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap);
   if (cols === 0 || rows === 0) return null;
 
@@ -815,7 +878,7 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
           img.crossOrigin = 'anonymous';
           img.onload = () => {
             ctx.drawImage(img, x * tileSize, y * tileSize);
-            progressCb?.(`ARSVO: тайл ${++loaded}/${total} (стр. ${pageIndex + 1})`);
+            progressCb?.(`ЭЛАР: тайл ${++loaded}/${total} (стр. ${pageIndex + 1})`);
             resolve();
           };
           img.onerror = () => { loaded++; resolve(); };
@@ -836,7 +899,7 @@ async function findTotalPagesARSVOTiled(guid, maxPages, progressCb) {
 
   let lo = 0, hi = 1;
   while (hi < maxPages) {
-    progressCb?.(`ARSVO тайлы: разведка стр. ${hi + 1}…`);
+    progressCb?.(`ЭЛАР тайлы: разведка стр. ${hi + 1}…`);
     if (!await tileExists(arsvoTileUrl(guid, hi, level, 0, 0, tileSize, overlap))) break;
     lo = hi; hi = Math.min(hi * 4, maxPages);
   }
@@ -846,7 +909,7 @@ async function findTotalPagesARSVOTiled(guid, maxPages, progressCb) {
   while (lo < hi - 1) {
     await waitIfPaused();
     const mid = Math.floor((lo + hi) / 2);
-    progressCb?.(`ARSVO тайлы: уточнение стр. ${mid + 1}…`);
+    progressCb?.(`ЭЛАР тайлы: уточнение стр. ${mid + 1}…`);
     if (await tileExists(arsvoTileUrl(guid, mid, level, 0, 0, tileSize, overlap))) lo = mid; else hi = mid;
   }
   return lo + 1;
@@ -856,8 +919,8 @@ async function findTotalPagesARSVO(guid, maxPages, progressCb) {
   // Быстрый путь: читаем из DOM
   const domCount = getArsvoTotalPagesFromDOM();
   if (domCount) {
-    progressCb?.(`ARSVO: найдено ${domCount} стр. (из DOM)`);
-    log('ARSVO total pages from DOM:', domCount);
+    progressCb?.(`ЭЛАР: найдено ${domCount} стр. (из DOM)`);
+    log('ЭЛАР: число страниц из DOM:', domCount);
     return domCount;
   }
 
@@ -892,7 +955,7 @@ async function findTotalPagesARSVO(guid, maxPages, progressCb) {
   // Быстрый верхний предел
   let lo = 0, hi = 1;
   while (hi < maxPages - 1) {
-    progressCb?.(`ARSVO: разведка стр. ${hi + 1}…`);
+    progressCb?.(`ЭЛАР: разведка стр. ${hi + 1}…`);
     if (!await testImageWithRetry(arsvoImageUrl(guid, hi))) break;
     lo = hi;
     hi = Math.min(hi * 4, maxPages - 1);
@@ -906,7 +969,7 @@ async function findTotalPagesARSVO(guid, maxPages, progressCb) {
   while (lo < hi - 1) {
     await waitIfPaused();
     const mid = Math.floor((lo + hi) / 2);
-    progressCb?.(`ARSVO: уточнение стр. ${mid + 1}…`);
+    progressCb?.(`ЭЛАР: уточнение стр. ${mid + 1}…`);
     if (await testImageWithRetry(arsvoImageUrl(guid, mid))) lo = mid;
     else hi = mid;
   }
@@ -1066,7 +1129,7 @@ function extractBestImageFromLiveDom() {
     candidates.push({ url, score: scoreYandexUrl(url, source) + (width > 400 && height > 400 ? 300 : 0) });
   }
 
-  // 1. img elements
+  // 1. img-элементы
   for (const img of document.images) {
     const w = img.naturalWidth || img.width || 0;
     const h = img.naturalHeight || img.height || 0;
@@ -1074,7 +1137,7 @@ function extractBestImageFromLiveDom() {
     pushCandidate(img.getAttribute('data-src'), w, h, 'img');
   }
 
-  // 2. JSON script blocks (live DOM — unlike the fetch-HTML path, this is accurate)
+  // 2. JSON-блоки в живом DOM
   for (const scriptEl of document.querySelectorAll('script[type="application/json"], script[type="application/ld+json"], script#__NEXT_DATA__')) {
     const text = scriptEl.textContent || '';
     if (!text.trim()) continue;
@@ -1090,7 +1153,7 @@ function extractBestImageFromLiveDom() {
     } catch { /* skip invalid JSON */ }
   }
 
-  // 3. Inline scripts (raw text search)
+  // 3. Inline-скрипты
   for (const scriptEl of document.scripts) {
     const text = scriptEl.textContent || '';
     if (!text) continue;
@@ -1100,7 +1163,7 @@ function extractBestImageFromLiveDom() {
 
   candidates.sort((a, b) => b.score - a.score);
 
-  // 4. Canvas fallback — capture largest visible canvas
+  // 4. Canvas fallback — захват наибольшего видимого canvas
   if (!candidates.length || candidates[0].score < 500) {
     let bestCanvas = null, bestArea = 0;
     for (const canvas of document.querySelectorAll('canvas')) {
@@ -1202,8 +1265,7 @@ function collectYandexPageImageUrls() {
 // ── ЦГА Москвы / МНА (cgamos.ru, mos-nha.ru) ─────────────────────────────────
 //
 // ЦГА Москвы использует несколько систем просмотра в зависимости от фонда.
-// Определяем тип вьювера динамически: предпочитаем совместимость с ARSVO
-// (ImageFilePart.ashx), затем DOM-сбор изображений.
+// Определяем тип вьювера по наличию ЭЛАР-тайлов или обычных img.
 
 function isCgamosPage() {
   return ['cgamos.ru', 'www.cgamos.ru', 'mos-nha.ru', 'www.mos-nha.ru']
@@ -1211,7 +1273,7 @@ function isCgamosPage() {
 }
 
 // Тип вьювера на текущей странице ЦГА Москвы:
-// 'arsvo'  — ASP.NET DeepZoom (ImageFile.ashx)
+// 'elar'   — ЭЛАР DeepZoom (ImageFile.ashx)
 // 'dom'    — DOM-сбор img-элементов (универсальный запасной вариант)
 function getCgamosViewerType() {
   if (
@@ -1222,8 +1284,7 @@ function getCgamosViewerType() {
 }
 
 function getCgamosGuid() {
-  // ARSVO-совместимый: те же методы, что в getArsvoGuid()
-  const GUID_RE = /[?&][Ii]d=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+    const GUID_RE = /[?&][Ii]d=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   for (const sel of ['img[src*="ImageFile.ashx"]', 'img[src*="ImageFilePart.ashx"]',
                      'input[type="hidden"][id*="fileId"]', 'input[type="hidden"][id*="FileId"]']) {
     const el = document.querySelector(sel);
@@ -1266,7 +1327,6 @@ function collectCgamosPageImageUrls() {
 }
 
 function getCgamosCurrentPage() {
-  // ARSVO-совместимый
   const tb = document.querySelector('input[id*="_tbCurrentPage"]');
   if (tb) {
     const n = parseInt(tb.value);
@@ -1643,7 +1703,7 @@ async function generatePDFKaisa(overrideFrom = null, overrideTo = null) {
 // ── Универсальный определитель адаптера ──────────────────────────────────────
 
 function getAdapterInfo() {
-  // КАИСА-Архив (проверяем раньше ARSVO — может пересекаться imageViewer)
+  // КАИСА-Архив
   if (isKaisaPage()) {
     const unitId = getKaisaDocId();
     return { type: 'kaisa', unitId };
@@ -1659,7 +1719,7 @@ function getAdapterInfo() {
     const total  = getCgamosSpaTotal();
     return { type: 'cgamos-spa', unitId, total };
   }
-  // ЦГА Москвы / МНА — ARSVO DeepZoom
+  // ЦГА Москвы / МНА — ЭЛАР DeepZoom
   if (isCgamosPage()) {
     const vType  = getCgamosViewerType();
     const unitId = getCgamosDocId();
@@ -1675,19 +1735,19 @@ function getAdapterInfo() {
     const unitId = getVrrUnitId();
     return unitId ? { type: 'vrr', unitId } : null;
   }
-  // ARSVO (Воронежский архив и подобные)
+  // ЭЛАР (Воронежский архив и подобные)
   if (isArsvoPage()) {
     const guid   = getArsvoGuid();
     if (!guid) return null;
     const unitId = getArsvoUnitId() || guid.replace(/-/g, '').slice(0, 12);
     return { type: 'arsvo', unitId, guid };
   }
-  // YAR-стиль (существующие архивы + Тверской как fallback)
+  // Стандартный режим (прямые URL изображений)
   const unitId = getUnitId();
   return unitId ? { type: 'yar', unitId } : null;
 }
 
-// ── Определение номера архива (YAR-стиль) ────────────────────────────────────
+// ── Определение номера архива ─────────────────────────────────────────────────
 
 async function detectArchiveNum(unit) {
   if (cachedArchNum) return cachedArchNum;
@@ -1834,7 +1894,7 @@ async function downloadWithSemaphore(url, filename) {
   });
 }
 
-// ── Бинарный поиск числа страниц (YAR-стиль) ─────────────────────────────────
+// ── Бинарный поиск числа страниц ───────────────────────────────────────────────
 
 async function findTotalPages(unit, archNum, start, maxPages, progressCb) {
   await waitIfPaused();
@@ -2101,7 +2161,7 @@ function _cleanupAfterDownload() {
   setIcon('inactive');
 }
 
-// ── Генерация PDF — YAR-стиль ─────────────────────────────────────────────────
+// ── Генерация PDF ───────────────────────────────────────────────────────────────
 
 async function generatePDF(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
@@ -2372,7 +2432,7 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
   const unitId = getArsvoUnitId() || (guid ? guid.replace(/-/g, '').slice(0, 12) : null);
 
   if (!guid) {
-    sendDone('PDF: не удалось получить идентификатор ARSVO');
+    sendDone('PDF: не удалось определить идентификатор документа ЭЛАР');
     isRunning = false; setIcon('inactive'); return;
   }
 
@@ -2381,10 +2441,10 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
   setIcon('active');
 
   try {
-    sendStatus('PDF/ARSVO: определение количества страниц…');
+    sendStatus('PDF/ЭЛАР: определение количества страниц…');
     const totalPages = await findTotalPagesARSVO(guid, cfg.maxPages, t => sendStatus(`PDF: ${t}`));
 
-    if (!totalPages) { sendDone('PDF/ARSVO: страницы не найдены'); return; }
+    if (!totalPages) { sendDone('PDF/ЭЛАР: страницы не найдены'); return; }
 
     const titleRaw = getTitleFromPage();
     const filename  = `${sanitizeForFilename(titleRaw)}_unit_${unitId}.pdf`;
@@ -2404,7 +2464,7 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
     for (let p = from; p <= to; p++) {
       await waitIfPaused();
       sendProgress(p - from + 1, total);
-      sendStatus(`PDF/ARSVO: страница ${p} / ${totalPages}` +
+      sendStatus(`PDF/ЭЛАР: страница ${p} / ${totalPages}` +
         (cfg.adaptiveSpeed ? ` (${throttle.delay} мс)` : ''));
 
       let bytes = await imgCacheGet(unitId, p);
@@ -2447,7 +2507,7 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
       await sleep(throttle.delay);
     }
 
-    if (!pagesData.length) { sendDone('PDF/ARSVO: нет данных для сборки'); return; }
+    if (!pagesData.length) { sendDone('PDF/ЭЛАР: нет данных для сборки'); return; }
 
     sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
     const pdfBytes = await buildPDFViaWorker(pagesData, (c,t) => sendStatus(`PDF: ${c}/${t} стр…`));
@@ -2468,7 +2528,7 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
 
   } catch (e) {
     if (e.message === 'stopped') sendDone('PDF: остановлено');
-    else { console.error('[RAD] generatePDFARSVO:', e); sendDone('PDF: ошибка — ' + e.message); }
+    else { console.error('[RAD] generatePDFЭЛАР:', e); sendDone('PDF: ошибка — ' + e.message); }
   } finally {
     isRunning = false; isPaused = false; isStopped = false;
     setIcon('inactive');
@@ -2655,7 +2715,7 @@ async function generatePDFCgamosArsvo(guid, unitId, overrideFrom, overrideTo) {
     pages: pagesData.length, timestamp: Date.now(), url: location.href, format: 'pdf' });
 }
 
-// ── Скачать весь документ — YAR ────────────────────────────────────────
+// ── Скачать весь документ ────────────────────────────────────────────────────
 
 async function downloadAll(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
@@ -2896,7 +2956,7 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
   const unitId = getArsvoUnitId() || (guid ? guid.replace(/-/g, '').slice(0, 12) : null);
 
   if (!guid) {
-    sendDone('Не удалось получить идентификатор документа ARSVO');
+    sendDone('Не удалось определить идентификатор документа ЭЛАР');
     isRunning = false; setIcon('inactive'); return;
   }
 
@@ -2924,7 +2984,7 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
     }
 
     if (!isResuming) {
-      sendStatus('ARSVO: определение количества страниц…');
+      sendStatus('ЭЛАР: определение количества страниц…');
       totalPages = await findTotalPagesARSVO(guid, cfg.maxPages, t => sendStatus(t));
 
       if (!totalPages) {
@@ -2992,7 +3052,7 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
 
   } catch (e) {
     if (e.message === 'stopped') sendDone('Остановлено');
-    else { console.error('[RAD] downloadAllARSVO:', e); sendDone('Ошибка: ' + e.message); }
+    else { console.error('[RAD] downloadAllЭЛАР:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
     _cleanupAfterDownload();
   }
@@ -3548,4 +3608,4 @@ ensureSettings().then(async () => {
   }
 });
 
-log('content-script loaded — Regional Archive Downloader v2.9.0');
+log('content-script loaded — Regional Archive Downloader v3.0.0');
