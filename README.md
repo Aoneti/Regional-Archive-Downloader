@@ -27,7 +27,6 @@
 - **Скачать PDF** — сборка в единый файл через Web Worker (нет лимита страниц, вкладка не замерзает)
 - **Скачать текущую страницу**
 - **Диапазон страниц** — двойной слайдер с вводом с клавиатуры, диапазон сохраняется между сессиями
-- **Пауза / Продолжение / Стоп**
 - **Продолжение после прерывания** — расширение запоминает прогресс
 
 ### Дополнительно
@@ -60,67 +59,67 @@
 |-------|--------|---|
 | Государственный архив Ярославской области | [af.yar-archives.ru](https://af.yar-archives.ru) | ✅ |
 | Государственный архив Вологодской области | [gosarchive.gov35.ru](https://gosarchive.gov35.ru) | ✅ |
-| Государственный архив Пермского края | [archives.permkrai.ru](https://archives.permkrai.ru) | ✅ |
-| Государственный архив Саратовской области | [archivesaratov.ru](https://archivesaratov.ru) | ✅ |
-| Государственный архив Тверской области | [archives.tverreg.ru](https://archives.tverreg.ru) | ✅ |
-| Архив Югры | [archivesugra.ru](https://archivesugra.ru) | ✅ |
-| Государственный исторический архив Чувашской Республики | [giachr.archives21.ru](https://giachr.archives21.ru) | ✅ |
-| Государственный архив Красноярского края | [catalog.krasarh.ru](https://catalog.krasarh.ru) | ✅ |
-| Государственный архив Архангельской области | [archives.dvinaland.ru](https://archives.dvinaland.ru) | ✅ |
-| Государственный архив Брянской области | [el.archive-bryansk.ru](https://el.archive-bryansk.ru) | ✅ |
-| Государственный архив Ивановской области | [af.ivarh.ru](https://af.ivarh.ru) | ✅ |
-| Государственный архив Калужской области | [archive.admoblkaluga.ru](https://archive.admoblkaluga.ru) | ✅ |
-| Архив Ленинградской области | [archiveslo.ru](https://archiveslo.ru) | ✅ |
-| Архив Новосибирской области | [gisarchive.nso.ru](https://gisarchive.nso.ru) | ✅ |
-| Государственный архив Омской области | [lk.iaoo.ru](https://lk.iaoo.ru) | ✅ |
-| Коми-Пермяцкий окружной государственный архив | [komi-permarchiv.ru](https://www.komi-permarchiv.ru) | ✅ |
-| Государственный архив Псковской области | [archpskov.kaisa.ru](http://archpskov.kaisa.ru) | ✅ |
-| Государственный архив Тульской области | [gato.tularegion.ru](https://gato.tularegion.ru) | ✅ |
-| Государственный архив Тамбовской области | [kaisa.tambovarchiv.ru](https://kaisa.tambovarchiv.ru) | ✅ |
-| Государственный архив Ульяновской области | [ogugauo.ru](https://ogugauo.ru) · [ulian.kaisa.ru](https://ulian.kaisa.ru) | ✅ |
-| Государственный архив Иркутской области | [гаио.рф](https://гаио.рф) | ✅ |
+| Государственный архив Пермского края | [archives.permkrai.ru](https://archives.permkrai.ru) | ❓(недостаточно данных) |
+| Государственный архив Саратовской области | [archivesaratov.ru](https://archivesaratov.ru) | ❓(недостаточно данных) |
+| Государственный архив Тверской области | [archives.tverreg.ru](https://archives.tverreg.ru) | ❓(недостаточно данных) |
+| Архив Ханты-Мансийского автономного округа | [archivesugra.ru](https://archivesugra.ru) | ❓(недостаточно данных) |
+| Государственный исторический архив Чувашской Республики | [giachr.archives21.ru](https://giachr.archives21.ru) | ❓(недостаточно данных) |
+| Государственный архив Красноярского края | [catalog.krasarh.ru](https://catalog.krasarh.ru) | ❓(недостаточно данных) |
+| Государственный архив Архангельской области | [archives.dvinaland.ru](https://archives.dvinaland.ru) | ❓(недостаточно данных) |
+| Государственный архив Брянской области | [el.archive-bryansk.ru](https://el.archive-bryansk.ru) | ❓(недостаточно данных) |
+| Государственный архив Ивановской области | [af.ivarh.ru](https://af.ivarh.ru) | ❓(недостаточно данных) |
+| Государственный архив Калужской области | [archive.admoblkaluga.ru](https://archive.admoblkaluga.ru) | ❓(недостаточно данных) |
+| Архив Ленинградской области | [archiveslo.ru](https://archiveslo.ru) | ❓(недостаточно данных) |
+| Архив Новосибирской области | [gisarchive.nso.ru](https://gisarchive.nso.ru) | ❓(недостаточно данных) |
+| Государственный архив Омской области | [lk.iaoo.ru](https://lk.iaoo.ru) | ❓(недостаточно данных) |
+| Коми-Пермяцкий окружной государственный архив | [komi-permarchiv.ru](https://www.komi-permarchiv.ru) | ❓(недостаточно данных) |
+| Государственный архив Псковской области | [archpskov.kaisa.ru](http://archpskov.kaisa.ru) | ❓(недостаточно данных) |
+| Государственный архив Тульской области | [gato.tularegion.ru](https://gato.tularegion.ru) | ❓(недостаточно данных) |
+| Государственный архив Тамбовской области | [kaisa.tambovarchiv.ru](https://kaisa.tambovarchiv.ru) | ❓(недостаточно данных) |
+| Государственный архив Ульяновской области | [ogugauo.ru](https://ogugauo.ru) · [ulian.kaisa.ru](https://ulian.kaisa.ru) | ❓(недостаточно данных) |
+| Государственный архив Иркутской области | [гаио.рф](https://гаио.рф) | ❓(недостаточно данных) |
 
 ### ЭЛАР-Архив
 
 | Архив | Ссылка | ✅ |
 |-------|--------|---|
-| Государственный архив Тюменской области | [gato.72to.ru](https://gato.72to.ru) | ✅ |
-| Объединённый государственный архив Челябинской области | [ais.archive74.ru](https://ais.archive74.ru) | ✅ |
-| Государственный архив Республики Крым | [188.191.26.35:52152](http://188.191.26.35:52152) | ✅ |
-| Государственный архив ЯНАО | [ea.yanao.ru](https://ea.yanao.ru) | ✅ |
-| Государственный архив города Севастополя | [aisarhiv.sev.gov.ru](https://aisarhiv.sev.gov.ru) | ✅ |
-| Государственный архив Курской области | [kga.rkursk.ru](https://kga.rkursk.ru) | ✅ |
-| Государственный архив Мурманской области | [aisdafmo.gov-murman.ru](https://aisdafmo.gov-murman.ru) | ✅ |
-| ЦГА Самарской области | [cgaso.regsamarh.ru](https://cgaso.regsamarh.ru) | ✅ |
-| Государственный архив Сахалинской области | [eais.sakhalin.gov.ru](https://eais.sakhalin.gov.ru) | ✅ |
-| Национальный архив Республики Саха (Якутия) | [archive.sakha.gov.ru](https://archive.sakha.gov.ru) | ✅ |
-| Государственный архив Ставропольского края | [gisais.stavkomarchiv.ru](https://gisais.stavkomarchiv.ru) | ✅ |
-| Государственный архив Республики Татарстан | [chitzal.eais.tatar.ru](https://chitzal.eais.tatar.ru) | ✅ |
-| Государственный архив Пензенской области | [ais.arhivpnz.ru](https://ais.arhivpnz.ru) | ✅ |
-| Государственный архив Воронежской области | [arsvo.ru](https://arsvo.ru) · [gavo.arsvo.ru](https://gavo.arsvo.ru) | ✅ |
+| Государственный архив Тюменской области | [gato.72to.ru](https://gato.72to.ru) | ❓(недостаточно данных) |
+| Объединённый государственный архив Челябинской области | [ais.archive74.ru](https://ais.archive74.ru) | ❓(недостаточно данных) |
+| Государственный архив Республики Крым | [188.191.26.35:52152](http://188.191.26.35:52152) | ❓(недостаточно данных) |
+| Государственный архив Ямало-Ненецкого автономного округа | [ea.yanao.ru](https://ea.yanao.ru) | ❓(недостаточно данных) |
+| Государственный архив города Севастополя | [aisarhiv.sev.gov.ru](https://aisarhiv.sev.gov.ru) | ❓(недостаточно данных) |
+| Государственный архив Курской области | [kga.rkursk.ru](https://kga.rkursk.ru) | ❓(недостаточно данных) |
+| Государственный архив Мурманской области | [aisdafmo.gov-murman.ru](https://aisdafmo.gov-murman.ru) | ❓(недостаточно данных) |
+| ЦГА Самарской области | [cgaso.regsamarh.ru](https://cgaso.regsamarh.ru) | ❓(недостаточно данных) |
+| Государственный архив Сахалинской области | [eais.sakhalin.gov.ru](https://eais.sakhalin.gov.ru) | ❓(недостаточно данных) |
+| Национальный архив Республики Саха (Якутия) | [archive.sakha.gov.ru](https://archive.sakha.gov.ru) | ❓(недостаточно данных) |
+| Государственный архив Ставропольского края | [gisais.stavkomarchiv.ru](https://gisais.stavkomarchiv.ru) | ❓(недостаточно данных) |
+| Государственный архив Республики Татарстан | [chitzal.eais.tatar.ru](https://chitzal.eais.tatar.ru) | ❓(недостаточно данных) |
+| Государственный архив Пензенской области | [ais.arhivpnz.ru](https://ais.arhivpnz.ru) | ❓(недостаточно данных) |
+| Государственный архив Воронежской области | [arsvo.ru](https://arsvo.ru) · [gavo.arsvo.ru](https://gavo.arsvo.ru) | ❓(недостаточно данных) |
 
 ### КАИСА-Архив
 
 | Архив | Ссылка | ✅ |
 |-------|--------|---|
-| Государственный архив Тульской области | [gato.tularegion.ru](https://gato.tularegion.ru) | ✅ |
-| Архивы Московской области | [arch.mosreg.ru](http://arch.mosreg.ru) | ✅ |
-| Государственный архив Владимирской области | [vladimir.kaisa.ru](https://vladimir.kaisa.ru) | ✅ |
-| Государственный архив Псковской области | [archpskov.kaisa.ru](http://archpskov.kaisa.ru) | ✅ |
-| Государственный архив Томской области | [archtomsk.tomica.ru](http://archtomsk.tomica.ru) | ✅ |
-| Государственный архив Республики Бурятия | [garb.kaisa.ru](https://garb.kaisa.ru) | ✅ |
-| Государственный архив Хабаровского края | [gakhk.khabkrai.ru](https://gakhk.khabkrai.ru) | ✅ |
-| Архивы Чувашской Республики | [giachr.kaisa.ru](http://giachr.kaisa.ru) | ✅ |
-| Государственный архив Сахалинской области | [giaso.ru](https://www.giaso.ru) | ✅ |
-| Государственный архив Новгородской области | [gano.altsoft.spb.ru](http://gano.altsoft.spb.ru) | ✅ |
-| Государственный архив Пермского края | [catalog.archive.perm.ru](http://catalog.archive.perm.ru) | ✅ |
-| Государственный архив Красноярского края | [catalog.krasarh.ru](https://catalog.krasarh.ru) | ✅ |
-| Государственный архив Орловской области | [catalog.gaorel.ru](https://catalog.gaorel.ru) | ✅ |
-| Государственный архив Республики Тыва | [catalog.gosarhivrt.ru](https://catalog.gosarhivrt.ru) | ✅ |
-| Красноярский городской архив | [mkukga.admkrsk.ru](https://mkukga.admkrsk.ru) | ✅ |
-| Муниципальные архивы Красноярского края | [krasmun.krasarh.ru](https://krasmun.krasarh.ru) | ✅ |
-| Архивы Алтайского края | [altarchives.ru](https://altarchives.ru) | ✅ |
-| Архивы Ульяновской области | [ulian.kaisa.ru](https://ulian.kaisa.ru) | ✅ |
+| Государственный архив Тульской области | [gato.tularegion.ru](https://gato.tularegion.ru) | ❓(недостаточно данных) |
+| Архивы Московской области | [arch.mosreg.ru](http://arch.mosreg.ru) | ❓(недостаточно данных) |
+| Государственный архив Владимирской области | [vladimir.kaisa.ru](https://vladimir.kaisa.ru) | ❓(недостаточно данных) |
+| Государственный архив Псковской области | [archpskov.kaisa.ru](http://archpskov.kaisa.ru) | ❓(недостаточно данных) |
+| Государственный архив Томской области | [archtomsk.tomica.ru](http://archtomsk.tomica.ru) | ❓(недостаточно данных) |
+| Государственный архив Республики Бурятия | [garb.kaisa.ru](https://garb.kaisa.ru) | ❓(недостаточно данных) |
+| Государственный архив Хабаровского края | [gakhk.khabkrai.ru](https://gakhk.khabkrai.ru) | ❓(недостаточно данных) |
+| Архивы Чувашской Республики | [giachr.kaisa.ru](http://giachr.kaisa.ru) | ❓(недостаточно данных) |
+| Государственный архив Сахалинской области | [giaso.ru](https://www.giaso.ru) | ❓(недостаточно данных) |
+| Государственный архив Новгородской области | [gano.altsoft.spb.ru](http://gano.altsoft.spb.ru) | ❓(недостаточно данных) |
+| Государственный архив Пермского края | [catalog.archive.perm.ru](http://catalog.archive.perm.ru) | ❓(недостаточно данных) |
+| Государственный архив Красноярского края | [catalog.krasarh.ru](https://catalog.krasarh.ru) | ❓(недостаточно данных) |
+| Государственный архив Орловской области | [catalog.gaorel.ru](https://catalog.gaorel.ru) | ❓(недостаточно данных) |
+| Государственный архив Республики Тыва | [catalog.gosarhivrt.ru](https://catalog.gosarhivrt.ru) | ❓(недостаточно данных) |
+| Красноярский городской архив | [mkukga.admkrsk.ru](https://mkukga.admkrsk.ru) | ❓(недостаточно данных) |
+| Муниципальные архивы Красноярского края | [krasmun.krasarh.ru](https://krasmun.krasarh.ru) | ❓(недостаточно данных) |
+| Архивы Алтайского края | [altarchives.ru](https://altarchives.ru) | ❓(недостаточно данных) |
+| Архивы Ульяновской области | [ulian.kaisa.ru](https://ulian.kaisa.ru) | ❓(недостаточно данных) |
 
 ### VRR
 
@@ -131,12 +130,19 @@
 
 ### Специальные адаптеры
 
-| Архив / Сервис | Ссылка | Тип | ✅ |
-|--------------|--------|-----|---|
-| Яндекс Архив | [ya.ru/archive](https://ya.ru/archive) · [yandex.ru/archive](https://yandex.ru/archive) | SPA + canvas | ✅ |
-| ЦГА Москвы / МНА | [cgamos.ru](https://cgamos.ru) · [mos-nha.ru](https://mos-nha.ru) | ЭЛАР + SPA-вьювер | ✅ |
+| Архив / Сервис | Ссылка | ✅ |
+|--------------|--------|---|
+| Яндекс Архив | [ya.ru/archive](https://ya.ru/archive) · [yandex.ru/archive](https://yandex.ru/archive) | ✅ |
+| ЦГА Москвы / МНА | [cgamos.ru](https://cgamos.ru) · [mos-nha.ru](https://mos-nha.ru) | ❓(недостаточно данных) |
 
----
+## ⚠️ Особенности отдельных архивов
+
+- **VRR (Кострома, Приморье)** — прокрутите ленту миниатюр до конца перед скачиванием
+- **Яндекс Архив** — откройте нужную страницу документа перед запуском
+- **ЭЛАР-архивы** — первый запуск может занять несколько секунд (зондирование сетки тайлов)
+- **Для работы расшрения требуется авторизация в большинстве архивов**
+
+--- 
 
 ## ⚙️ Технические детали
 
@@ -154,12 +160,3 @@
 ├── options.html / options.js  # Настройки
 └── options-archives.js    # Список архивов для страницы настроек
 ```
-
----
-
-## ⚠️ Особенности отдельных архивов
-
-- **VRR (Кострома, Приморье)** — прокрутите ленту миниатюр до конца перед скачиванием
-- **Яндекс Архив** — откройте нужную страницу документа перед запуском
-- **ЭЛАР-архивы** — первый запуск может занять несколько секунд (зондирование сетки тайлов)
-- **Для работы расшрения требуется авторизация в большинстве архивов**
