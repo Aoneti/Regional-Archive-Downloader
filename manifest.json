@@ -92,7 +92,8 @@
     "https://mkukga.admkrsk.ru/*",
     "https://krasmun.krasarh.ru/*",
     "https://altarchives.ru/*",
-	"https://sogaspi.regsamarh.ru/*"
+	"https://sogaspi.regsamarh.ru/*",
+	"https://ais.гаио.рф/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
@@ -199,7 +200,8 @@
         "https://mkukga.admkrsk.ru/*",
         "https://krasmun.krasarh.ru/*",
         "https://altarchives.ru/*",
-		"https://sogaspi.regsamarh.ru/*"
+		"https://sogaspi.regsamarh.ru/*",
+		"https://ais.гаио.рф/*"
       ],
       "js": [
         "content-script.js"
