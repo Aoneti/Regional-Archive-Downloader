@@ -106,7 +106,6 @@
 | Архивы Чувашской Республики | [giachr.kaisa.ru](http://giachr.kaisa.ru), [giachr.archives21.ru](https://giachr.archives21.ru/) | ❓(недостаточно данных) |
 | Государственный архив Сахалинской области | [giaso.ru](https://www.giaso.ru) | ❓(недостаточно данных) |
 | Государственный архив Новгородской области | [gano.altsoft.spb.ru](http://gano.altsoft.spb.ru) | ❓(недостаточно данных) |
-| Государственный архив Пермского края | [catalog.archive.perm.ru](http://catalog.archive.perm.ru) | ❓(недостаточно данных) |
 | Государственный архив Красноярского края | [catalog.krasarh.ru](https://catalog.krasarh.ru) | ❓(недостаточно данных) |
 | Красноярский городской архив | [mkukga.admkrsk.ru](https://mkukga.admkrsk.ru) | ❓(недостаточно данных) |
 | Муниципальные архивы Красноярского края | [krasmun.krasarh.ru](https://krasmun.krasarh.ru) | ❓(недостаточно данных) |
