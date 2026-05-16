@@ -40,19 +40,36 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 const BLANK_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+
 const ARCHIVE_NUM_MAP = {
   'af.yar-archives.ru':    '27',
   'gosarchive.gov35.ru':   '1',
   'archives.permkrai.ru':  '2',
   'archivesaratov.ru':     '3',
-  'www.archivesaratov.ru': '3'
+  'www.archivesaratov.ru': '3',
+  'lk.iaoo.ru':            '1'
 };
-const ARCHIVE_PROBE_CANDIDATES = ['27', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'];
+
+const ARCHIVE_PROBE_CANDIDATES = [
+  '27', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+  '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
+  '21', '22', '23', '24', '25', '26'
+];
+
 const PDF_PAGE_HARD_LIMIT = 5000;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 // ── Кэш номера архива ─────────────────────────────────────────────────────────
 let cachedArchNum = null;
+let _archiveImageSuffix = null;
+
+function getArchiveImageSuffix() {
+  if (_archiveImageSuffix !== null) return _archiveImageSuffix;
+  const invImg = document.querySelector('img[src*="/image-inv/"]');
+  _archiveImageSuffix = invImg ? 'image-inv' : 'image';
+  log('archive image suffix detected:', _archiveImageSuffix);
+  return _archiveImageSuffix;
+}
 
 // ── IndexedDB ─────────────────────────────────────────────────────────────────
 
@@ -298,8 +315,17 @@ function setIcon(state) {
 // ── Утилиты DOM / URL ─────────────────────────────────────────────────────────
 
 function getUnitId() {
+  // Стандартный путь: /unit/12345
   const m = location.pathname.match(/\/unit\/(\d+)/);
-  return m ? m[1] : null;
+  if (m) return m[1];
+  const archViewerImg = document.querySelector('img[src*="/archive"][src*="/image"]');
+  if (archViewerImg) {
+    const sm = (archViewerImg.getAttribute('src') || '')
+      .match(/\/archive\d+\/image(?:-inv)?\/(\d+)/);
+    if (sm) return sm[1];
+  }
+
+  return null;
 }
 
 function getTitleFromPage() {
@@ -316,7 +342,6 @@ function getTitleFromPage() {
   // Яндекс Архив: путь фонда/описи/дела в заголовке документа
   const yaPath = document.querySelector('.OneDocumentHeader-Path');
   if (yaPath) {
-    // Берём только текстовые узлы (без иконки копирования)
     const text = Array.from(yaPath.childNodes)
       .filter(n => n.nodeType === Node.TEXT_NODE || n.tagName === 'SPAN' && !n.querySelector('svg'))
       .map(n => n.textContent)
@@ -339,7 +364,6 @@ function getTitleFromPage() {
 function collectPageMeta() {
   const lines = [];
 
-  // Вологодский архив и совместимые: .well содержит h1 (название) и <p> (фонд, даты, листы)
   const well = document.querySelector('.well');
   if (well) {
     const h1 = well.querySelector('h1');
@@ -350,7 +374,6 @@ function collectPageMeta() {
     });
   }
 
-  // Табличные данные (Ярославский и аналоги)
   if (!lines.length) {
     document.querySelectorAll('table.table tr, .unit-info tr').forEach(row => {
       const cells = [...row.querySelectorAll('td, th')].map(c => c.textContent.trim()).filter(Boolean);
@@ -358,7 +381,6 @@ function collectPageMeta() {
     });
   }
 
-  // Запасной вариант
   if (!lines.length) {
     document.querySelectorAll('.description p, .card-body p').forEach(p => {
       const t = p.textContent.trim();
@@ -372,7 +394,6 @@ function collectPageMeta() {
 function collectStructuredMeta() {
   const result = {};
 
-  // Вологодский архив: .well с h1 и <p> строками вида "Фонд № N. Оп.M. Д. K"
   const well = document.querySelector('.well');
   if (well) {
     const h1 = well.querySelector('h1');
@@ -380,18 +401,15 @@ function collectStructuredMeta() {
     well.querySelectorAll('p').forEach(p => {
       const t = p.textContent.trim();
       if (!t) return;
-      // Парсим строки вида "Фонд № 1063. Оп.12. Д. 10" или "Даты документов: ..."
       const colonIdx = t.indexOf(':');
       if (colonIdx > 0 && colonIdx < 30) {
         result[t.slice(0, colonIdx).trim()] = t.slice(colonIdx + 1).trim();
       } else {
-        // Строка "Фонд № N. Оп.M. Д. K" — кладём как реквизит дела
         result['Реквизиты'] = t;
       }
     });
   }
 
-  // Табличные данные
   if (Object.keys(result).length < 2) {
     document.querySelectorAll('table.table tr, .unit-info tr').forEach(row => {
       const cells = [...row.querySelectorAll('td, th')]
@@ -441,7 +459,8 @@ function sanitizeForFilename(s) {
 }
 
 function imageUrl(unit, archNum, page) {
-  return `${location.origin}/archive${archNum}/image/${unit}?n=${page}`;
+  const suffix = getArchiveImageSuffix();
+  return `${location.origin}/archive${archNum}/${suffix}/${unit}?n=${page}`;
 }
 
 function pad(num, w) { return String(num).padStart(w, '0'); }
@@ -462,7 +481,7 @@ function detectCurrentPage() {
   for (const img of document.querySelectorAll('img')) {
     try {
       const src = img.getAttribute('src') || img.src || '';
-      if (src.includes('/image/')) {
+      if (src.includes('/image/') || src.includes('/image-inv/')) {
         const m = src.match(/[?&]n=(\d+)/);
         if (m) {
           const n = Number(m[1]);
@@ -477,7 +496,7 @@ function detectCurrentPage() {
 
 // ── VRR Адаптер ────────────────────
 
-let _vrrDirectPrefix = null; // null = неизвестно, '' = нет прямого URL
+let _vrrDirectPrefix = null;
 
 function isVrrPage() {
   return !!(
@@ -486,13 +505,11 @@ function isVrrPage() {
   );
 }
 
-// Возвращает canvas вьювера VRR
 function getVrrCanvas() {
   return document.getElementById('sys_viewer_img') ||
          document.querySelector('canvas[id*="sys_viewer"], canvas[id*="viewer_img"]');
 }
 
-// Сэмплирует центральные пиксели canvas для детекции смены страницы
 function getVrrCanvasFingerprint(canvas) {
   try {
     const ctx = canvas.getContext('2d');
@@ -503,19 +520,16 @@ function getVrrCanvasFingerprint(canvas) {
   } catch { return String(Math.random()); }
 }
 
-// Кликает миниатюру с данным offset для навигации VRR
 function navigateVrrToOffset(unitId, offset) {
   const img = document.querySelector(
     `img[src="/m/${unitId}/${offset}"], img[src^="/m/${unitId}/${offset}?"]`
   );
   if (!img) return false;
-  // Кликаем контейнер или сам img
   const clickable = img.closest('li, [role="button"], [onclick], [class*="thumb"], [class*="item"]') || img;
   clickable.click();
   return true;
 }
 
-// Ждёт обновления canvas после навигации 
 async function waitForVrrCanvasRender(canvas, prevFingerprint, timeoutMs = 20000) {
   const startedAt  = Date.now();
   const MIN_LEN    = 40000;
@@ -540,7 +554,6 @@ async function waitForVrrCanvasRender(canvas, prevFingerprint, timeoutMs = 20000
   throw new Error(`VRR: тайм-аут ожидания страницы`);
 }
 
-// Пробует найти прямой URL полноразмерного изображения (не canvas)
 async function probeVrrDirectPrefix(unitId, offset) {
   if (_vrrDirectPrefix !== null) return _vrrDirectPrefix;
   for (const prefix of ['/i/', '/img/', '/f/', '/file/']) {
@@ -561,13 +574,11 @@ function vrrDirectImageUrl(unitId, offset) {
 }
 
 function getVrrUnitId() {
-  // Извлекаем из src миниатюры 
   const img = document.querySelector('img[src^="/m/"]');
   if (img) {
     const m = img.getAttribute('src').match(/^\/m\/(\d+)\//);
     if (m) return m[1];
   }
-  // Запасной вариант
   const pm = location.pathname.match(/\/(?:section|view|doc)\/(\d+)/);
   return pm ? pm[1] : null;
 }
@@ -581,7 +592,6 @@ function getVrrTotalPages() {
   return 0;
 }
 
-// Собирает все загруженные в DOM байтовые смещения страниц.
 function getVrrPageOffsets(unitId) {
   const imgs    = document.querySelectorAll(`img[src^="/m/${unitId}/"]`);
   const seen    = new Set();
@@ -596,12 +606,10 @@ function getVrrPageOffsets(unitId) {
   return offsets;
 }
 
-// Возвращает URL миниатюры
 function vrrThumbUrl(unitId, offset) {
   return `${location.origin}/m/${unitId}/${offset}`;
 }
 
-// Пытается определить смещение текущей видимой страницы VRR
 function getVrrCurrentOffset(unitId) {
   const active = document.querySelector(
     '.VRR_min_selected img[src^="/m/"], ' +
@@ -612,7 +620,6 @@ function getVrrCurrentOffset(unitId) {
     const m = active.getAttribute('src').match(/\/m\/\d+\/(\d+)$/);
     if (m) return parseInt(m[1]);
   }
-  // Запасной вариант
   const offsets = getVrrPageOffsets(unitId);
   return offsets.length > 0 ? offsets[0] : 0;
 }
@@ -622,13 +629,9 @@ function getVrrCurrentOffset(unitId) {
 const ARSVO_GUID_SEL =
   '#MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_fileId';
 
-// Детектируем страницы ЭЛАР-Архив
 function isArsvoPage() {
-  // Стандартный скрытый инпут с GUID
   if (document.querySelector(ARSVO_GUID_SEL)?.value?.includes('-')) return true;
-  // ЭЛАР-Архив: уникальный контейнер просмотрщика
   if (document.getElementById('storageFilesViewerPnl')) return true;
-  // Тайловый DeepZoom вьювер
   return !!(
     document.querySelector('img[src*="ImageFile.ashx"][src*="id="]') ||
     document.querySelector('img[src*="ImageFile.ashx"][src*="Id="]') ||
@@ -641,16 +644,12 @@ function isElarPage() {
 }
 
 function getArsvoUnitId() {
-  // ItemId из строки запроса
   const m = location.search.match(/[?&]ItemId=(\d+)/i);
   if (m) return m[1];
-  // ЭЛАР: числовой id в строке запроса
   const elarM = location.search.match(/[?&](?:id|unitId|unitid)=(\d+)/i);
   if (elarM) return elarM[1];
-  // Числовой сегмент в пути
   const pathM = location.pathname.match(/\/(\d{4,})\/?$/);
   if (pathM) return pathM[1];
-  // Ищем в ссылках страницы
   const link = document.querySelector('a[href*="ItemId="]');
   if (link) {
     const lm = link.href.match(/ItemId=(\d+)/);
@@ -671,7 +670,6 @@ function getArsvoGuid() {
     if (inp?.value?.match(/^[0-9a-f-]{36}$/i)) return inp.value;
   }
 
-  // Запасной вариант
   const GUID_RE = /[?&][Ii]d=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   for (const sel of ['img[src*="ImageFile.ashx"]', 'img[src*="ImageFilePart.ashx"]']) {
     for (const img of document.querySelectorAll(sel)) {
@@ -688,7 +686,6 @@ function getArsvoGuid() {
 }
 
 function getArsvoCurrentPage() {
-  // 1-indexed: скрытый инпут h_currentPageNumber
   const el1 = document.getElementById(
     'MainPlaceHolder_StorageFilesViewerControl_h_currentPageNumber'
   );
@@ -696,7 +693,6 @@ function getArsvoCurrentPage() {
     const n = parseInt(el1.value);
     if (!isNaN(n) && n > 0) return n;
   }
-  // 0-indexed: скрытый инпут h_currentImagePageNumber
   const el0 = document.getElementById(
     'MainPlaceHolder_StorageFilesViewerControl_h_currentImagePageNumber'
   );
@@ -704,19 +700,16 @@ function getArsvoCurrentPage() {
     const n = parseInt(el0.value);
     if (!isNaN(n) && n >= 0) return n + 1;
   }
-  // Видимое текстовое поле навигации
   const tb = document.querySelector('input[id*="_tbCurrentPage"]');
   if (tb) {
     const n = parseInt(tb.value);
     if (!isNaN(n) && n > 0) return n;
   }
-  // Извлекаем из URL тайла (параметр page= является 0-indexed)
   const tileImg = document.querySelector('img[src*="ImageFile.ashx"][src*="page="]');
   if (tileImg) {
     const m = (tileImg.getAttribute('src') || '').match(/[?&]page=(\d+)/);
     if (m) return parseInt(m[1]) + 1;
   }
-  // ЭЛАР: текстовый счётчик рядом с кнопкой «Далее»
   for (const sel of ['[id*="CurrentPage"]', '[id*="currentPage"]', 'input[id*="Page"]']) {
     const el = document.querySelector(sel);
     if (!el) continue;
@@ -727,7 +720,6 @@ function getArsvoCurrentPage() {
 }
 
 function getArsvoTotalPagesFromDOM() {
-  // Скрытые инпуты
   const hiddenSels = [
     '#MainPlaceHolder_StorageFilesViewerControl_h_pagesCount',
     'input[id$="_h_pagesCount"]',
@@ -736,7 +728,6 @@ function getArsvoTotalPagesFromDOM() {
     'input[id*="TotalPages"]',
     'span[id*="lbPagesCount"]',
     'span[id*="TotalPages"]',
-    // ЭЛАР-Архив
     '[id*="TotalCount"]',
     '[id*="totalCount"]',
     '[id*="CountPages"]',
@@ -750,7 +741,6 @@ function getArsvoTotalPagesFromDOM() {
     if (!isNaN(n) && n > 0) return n;
   }
 
-  // Текстовый паттерн «из N», «/ N», «of N» в компактных элементах
   for (const el of document.querySelectorAll('span, td, label')) {
     const text = el.childNodes.length <= 2 ? (el.textContent || '').trim() : '';
     if (!text || text.length > 30) continue;
@@ -764,37 +754,30 @@ function getArsvoTotalPagesFromDOM() {
   return null;
 }
 
-// pageIndex — 0-based
 function arsvoImageUrl(guid, pageIndex) {
   return `${location.origin}/Pages/ImageFilePart.ashx?Crop=False&Id=${guid}&Page=${pageIndex}&Zoom=1`;
 }
 
-// ── тайловая сшивка ───
-
 const _arsvoFullPageOk = false;
 async function probeArsvoFullPage(guid) { return false; }
 
-// Строит URL одного тайла
 function arsvoTileUrl(guid, pageIndex, level, x, y, tileSize = 800, overlap = 1) {
   return `${location.origin}/Pages/ImageFile.ashx?level=${level}&x=${x}&y=${y}` +
     `&tileSize=${tileSize}&tileOverlap=${overlap}&id=${guid}&page=${pageIndex}&rotation=0&searchtext=`;
 }
 
-// Возвращает true если ЭЛАР использует режим одного тайла (весь скан = 1 тайл)
 function isElarSingleTileMode() {
   const img = document.querySelector('img[src*="ImageFile.ashx"]');
   if (!img) return false;
   const src = img.getAttribute('src') || '';
   const ts  = parseInt(src.match(/[?&]tileSize=(\d+)/)?.[1]);
-  return ts >= 100000; // tileSize=999999 → single-tile mode
+  return ts >= 100000;
 }
 
-// URL одного тайла для запроса полной страницы
 function elarSingleTileUrl(guid, pageIndex) {
   return `${location.origin}/Pages/ImageFile.ashx?level=12&x=0&y=0&tileSize=999999&tileOverlap=1&id=${guid}&page=${pageIndex}&rotation=0&searchtext=`;
 }
 
-// Читает параметры тайлов из DOM
 function getArsvoTileParams() {
   const img = document.querySelector('img[src*="ImageFile.ashx"][src*="level="]');
   if (!img) {
@@ -809,7 +792,6 @@ function getArsvoTileParams() {
   return { level, tileSize, overlap };
 }
 
-// Определяет число колонок и строк тайлов для одной страницы
 const ARSVO_TILE_MIN_BYTES = 3000;
 
 async function tileExists(url) {
@@ -822,7 +804,6 @@ async function tileExists(url) {
     });
     clearTimeout(timer);
     if (!res.ok) return false;
-    // Читаем только первые несколько КБ
     const reader = res.body.getReader();
     let total = 0;
     while (true) {
@@ -836,7 +817,6 @@ async function tileExists(url) {
 }
 
 async function probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap) {
-  // Определяем число колонок
   let cols = 0;
   for (let x = 0; x < 40; x++) {
     if (!await tileExists(arsvoTileUrl(guid, pageIndex, level, x, 0, tileSize, overlap))) break;
@@ -844,7 +824,6 @@ async function probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap) {
   }
   if (cols === 0) return { cols: 0, rows: 0 };
 
-  // Определяем число строк
   let rows = 0;
   for (let y = 0; y < 40; y++) {
     if (!await tileExists(arsvoTileUrl(guid, pageIndex, level, 0, y, tileSize, overlap))) break;
@@ -853,7 +832,6 @@ async function probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap) {
   return { cols, rows };
 }
 
-// Сшивает тайлы одной страницы
 async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   const { level, tileSize, overlap } = getArsvoTileParams();
 
@@ -861,7 +839,6 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   const { cols, rows } = await probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap);
   if (cols === 0 || rows === 0) return null;
 
-  // tileOverlap=1 
   const canvas = document.createElement('canvas');
   canvas.width  = cols * tileSize;
   canvas.height = rows * tileSize;
@@ -892,7 +869,6 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 
-// Определяет число страниц для тайлового ARSVO (без ImageFilePart)
 async function findTotalPagesARSVOTiled(guid, maxPages, progressCb) {
   const { level, tileSize, overlap } = getArsvoTileParams();
   if (!await tileExists(arsvoTileUrl(guid, 0, level, 0, 0, tileSize, overlap))) return 0;
@@ -916,7 +892,6 @@ async function findTotalPagesARSVOTiled(guid, maxPages, progressCb) {
 }
 
 async function findTotalPagesARSVO(guid, maxPages, progressCb) {
-  // Быстрый путь: читаем из DOM
   const domCount = getArsvoTotalPagesFromDOM();
   if (domCount) {
     progressCb?.(`ЭЛАР: найдено ${domCount} стр. (из DOM)`);
@@ -924,11 +899,9 @@ async function findTotalPagesARSVO(guid, maxPages, progressCb) {
     return domCount;
   }
 
-  // Медленный путь: используем тайловый подход 
   await waitIfPaused();
 
   if (isElarSingleTileMode()) {
-    // Single-tile режим
     progressCb?.('ЭЛАР: однотайловый режим, поиск числа страниц…');
     if (!await testImageWithRetry(elarSingleTileUrl(guid, 0))) return 0;
 
@@ -948,41 +921,11 @@ async function findTotalPagesARSVO(guid, maxPages, progressCb) {
     return lo + 1;
   }
 
-  // Multi-tile режим (Воронеж и аналоги)
   progressCb?.('ЭЛАР: многотайловый режим, поиск числа страниц…');
   return findTotalPagesARSVOTiled(guid, maxPages, progressCb);
-
-  // Быстрый верхний предел
-  let lo = 0, hi = 1;
-  while (hi < maxPages - 1) {
-    progressCb?.(`ЭЛАР: разведка стр. ${hi + 1}…`);
-    if (!await testImageWithRetry(arsvoImageUrl(guid, hi))) break;
-    lo = hi;
-    hi = Math.min(hi * 4, maxPages - 1);
-  }
-
-  if (await testImageWithRetry(arsvoImageUrl(guid, maxPages - 1))) return maxPages;
-
-  if (isStopped) throw new Error('stopped');
-
-  // Бинарный поиск точной границы
-  while (lo < hi - 1) {
-    await waitIfPaused();
-    const mid = Math.floor((lo + hi) / 2);
-    progressCb?.(`ЭЛАР: уточнение стр. ${mid + 1}…`);
-    if (await testImageWithRetry(arsvoImageUrl(guid, mid))) lo = mid;
-    else hi = mid;
-  }
-
-  return lo + 1;
 }
 
-// ── Яндекс Архив (ya.ru/archive, yandex.ru/archive) ──────────────────────────
-//
-// Поддерживаются оба домена: ya.ru и yandex.ru.
-// Стратегия: для каждой страницы fetch() страницы по её URL и извлечение
-// URL изображения из полученного HTML — надёжнее DOM-скрапинга, т.к. не
-// зависит от состояния SPA. Приоритет: /archive/api/image?type=original.
+// ── Яндекс Архив ──────────────────────────────────────────────────────────────
 
 function isYandexArchivePage() {
   return /(^|\.)yandex\.ru$/i.test(location.hostname) && /\/archive\//i.test(location.pathname) ||
@@ -990,12 +933,10 @@ function isYandexArchivePage() {
 }
 
 function getYandexArchiveDocId() {
-  // fond/N/opis/M/delo/K
   const fondM = location.pathname.match(
     /fond[_/-]?(\d+)[^/]*\/opis[_/-]?(\d+)[^/]*\/(?:delo|unit|ed)[_/-]?(\d+)/i
   );
   if (fondM) return `f${fondM[1]}_o${fondM[2]}_d${fondM[3]}`;
-  // Последний числовой сегмент пути
   const parts = location.pathname.split('/').filter(Boolean);
   for (let i = parts.length - 1; i >= 0; i--) {
     if (/^\d+$/.test(parts[i])) return parts[i];
@@ -1006,14 +947,12 @@ function getYandexArchiveDocId() {
   return 'doc_' + Date.now();
 }
 
-// Строит URL конкретной страницы, заменяя последний числовой сегмент.
 function getYandexPageUrl(pageNumber) {
   const base = location.href.replace(/[?#].*$/, '');
   const replaced = base.replace(/\/\d+\/?$/, '/' + pageNumber);
   return replaced !== base ? replaced : base.replace(/\/?$/, '/' + pageNumber);
 }
 
-// Проверяет, что байты — не HTML-страница ошибки/редиректа
 function looksLikeHtmlBytes(bytes) {
   if (!bytes || !bytes.length) return false;
   let sample = '';
@@ -1022,7 +961,6 @@ function looksLikeHtmlBytes(bytes) {
   return /^[\s\uFEFF]*<!doctype html|^[\s\uFEFF]*<html|^[\s\uFEFF]*<head|^[\s\uFEFF]*<body/i.test(sample);
 }
 
-// Список URL-паттернов, которые точно не являются страничным сканом
 function isBlockedYandexAsset(url) {
   const blocked = [
     /captcha/i, /og-image/i, /favicon/i, /logo/i,
@@ -1038,7 +976,6 @@ function isAllowedYandexCandidate(url) {
   if (/\.css($|[?#])/i.test(url)) return false;
   if (/\/_next\//i.test(url))     return false;
   if (/\/webpack/i.test(url))     return false;
-  // Whitelist
   if (/[?&]type=original([&#]|$)/i.test(url))           return true;
   if (/\/archive\/api\/image/i.test(url))                return true;
   if (/\/archive\/catalog\//i.test(url))                 return true;
@@ -1064,10 +1001,6 @@ function scoreYandexUrl(url, source) {
   return score;
 }
 
-// Извлекает лучший URL изображения из HTML страницы Яндекс Архива.
-// Намеренно НЕ парсит __NEXT_DATA__ JSON (там слишком много URL-кандидатов,
-// среди которых сложно выбрать нужный без доступа к живому DOM).
-// Приоритет: /archive/api/image?type=original > /archive/catalog/ > generic img
 function extractBestYandexImageFromHtml(html, pageUrl) {
   const base = pageUrl || location.href;
   const candidates = [];
@@ -1088,23 +1021,18 @@ function extractBestYandexImageFromHtml(html, pageUrl) {
 
   let m;
 
-  // 1. type=original absolute URL — highest priority
   const reOrigAbs = /https?:\?\/\?\/[^"'<>\\s]*\/archive\/api\/image\?[^"'<>\\s]*type=original[^"'<>\\s]*/gi;
   while ((m = reOrigAbs.exec(html)) !== null) push(m[0], 'script');
 
-  // 2. type=original relative URL in quotes
-  const reOrigRel = /(["'])(\/archive\/api\/image\?[^"']*type=original[^"']*)/gi;
+  const reOrigRel = /(["'])(\/archive\/api\/image\?[^"']*type=original[^"']*)/gi;
   while ((m = reOrigRel.exec(html)) !== null) push(m[2], 'script');
 
-  // 3. /archive/catalog/ paths
-  const reCatalog = /(["'])(\/archive\/catalog\/[^"']+\.(?:jpg|jpeg|png|webp|jp2|tif|tiff)[^"']*)/gi;
+  const reCatalog = /(["'])(\/archive\/catalog\/[^"']+\.(?:jpg|jpeg|png|webp|jp2|tif|tiff)[^"']*)/gi;
   while ((m = reCatalog.exec(html)) !== null) push(m[2], 'script');
 
-  // 4. Named URL fields in scripts (imageUrl, originalUrl, etc.)
-  const reNamed = /(?:imageUrl|originalUrl|downloadUrl|contentUrl|resourceUrl)\s*[:=]\s*["']([^"']+)["']/gi;
+  const reNamed = /(?:imageUrl|originalUrl|downloadUrl|contentUrl|resourceUrl)\s*[:=]\s*["']([^"']+)["']/gi;
   while ((m = reNamed.exec(html)) !== null) push(m[1], 'script');
 
-  // 5. Generic absolute image URLs (last resort)
   const reGeneric = /(https?:\?\/\?\/[^"'<>\\s]*\.(?:jpg|jpeg|png|webp|jp2|tif|tiff)(?:[?#][^"'<>\\s]*)?)/gi;
   while ((m = reGeneric.exec(html)) !== null) push(m[1], 'img');
 
@@ -1113,9 +1041,6 @@ function extractBestYandexImageFromHtml(html, pageUrl) {
   return candidates.length ? candidates[0].url : null;
 }
 
-// Сканирует живой DOM текущей страницы (включая canvas) для поиска изображения.
-// Используется для скачивания текущей страницы на сайтах с canvas-рендерингом
-// (Яндекс Архив использует Konva.js — img-тегов нет, только canvas).
 function extractBestImageFromLiveDom() {
   const candidates = [];
   const seen = new Set();
@@ -1129,7 +1054,6 @@ function extractBestImageFromLiveDom() {
     candidates.push({ url, score: scoreYandexUrl(url, source) + (width > 400 && height > 400 ? 300 : 0) });
   }
 
-  // 1. img-элементы
   for (const img of document.images) {
     const w = img.naturalWidth || img.width || 0;
     const h = img.naturalHeight || img.height || 0;
@@ -1137,7 +1061,6 @@ function extractBestImageFromLiveDom() {
     pushCandidate(img.getAttribute('data-src'), w, h, 'img');
   }
 
-  // 2. JSON-блоки в живом DOM
   for (const scriptEl of document.querySelectorAll('script[type="application/json"], script[type="application/ld+json"], script#__NEXT_DATA__')) {
     const text = scriptEl.textContent || '';
     if (!text.trim()) continue;
@@ -1153,7 +1076,6 @@ function extractBestImageFromLiveDom() {
     } catch { /* skip invalid JSON */ }
   }
 
-  // 3. Inline-скрипты
   for (const scriptEl of document.scripts) {
     const text = scriptEl.textContent || '';
     if (!text) continue;
@@ -1163,7 +1085,6 @@ function extractBestImageFromLiveDom() {
 
   candidates.sort((a, b) => b.score - a.score);
 
-  // 4. Canvas fallback — захват наибольшего видимого canvas
   if (!candidates.length || candidates[0].score < 500) {
     let bestCanvas = null, bestArea = 0;
     for (const canvas of document.querySelectorAll('canvas')) {
@@ -1183,7 +1104,6 @@ function extractBestImageFromLiveDom() {
   return candidates.length ? { url: candidates[0].url, isCanvas: false } : null;
 }
 
-// Загружает страницу по номеру и извлекает URL изображения через fetch+HTML-парсинг.
 async function fetchYandexPageImage(pageNumber) {
   const pageUrl = getYandexPageUrl(pageNumber);
   const response = await fetch(pageUrl, { credentials: 'include' });
@@ -1194,7 +1114,6 @@ async function fetchYandexPageImage(pageNumber) {
   return { pageUrl, imageUrl };
 }
 
-// Скачивает байты изображения с валидацией (не HTML, не слишком мал).
 async function getValidatedYandexBytes(url, pageNumber) {
   const response = await fetch(url, { credentials: 'include' });
   if (!response.ok) throw new Error(`Скан стр. ${pageNumber}: HTTP ${response.status}`);
@@ -1214,13 +1133,11 @@ async function getValidatedYandexBytes(url, pageNumber) {
 }
 
 function getYandexArchiveTotalPages() {
-  // ShortPagination/Pagination компонент Яндекс Архива: "N / M"
   for (const node of document.querySelectorAll('[class*="ShortPagination"], [class*="Pagination"]')) {
     const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
     const m = text.match(/(\d{1,5})\s*\/\s*(\d{1,5})/);
     if (m) return parseInt(m[2], 10);
   }
-  // Паттерн "N / M" в теле страницы
   const bodyText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
   const bm = bodyText.match(/\b(\d{1,5})\s*\/\s*(\d{1,5})\b/);
   if (bm) return parseInt(bm[2], 10);
@@ -1228,7 +1145,6 @@ function getYandexArchiveTotalPages() {
 }
 
 function getYandexArchiveCurrentPage() {
-  // Пагинатор: input с числом рядом с "/ N"
   for (const input of document.querySelectorAll('input')) {
     const val = (input.value || '').trim();
     if (!/^\d{1,5}$/.test(val)) continue;
@@ -1240,13 +1156,11 @@ function getYandexArchiveCurrentPage() {
       return parseInt(val, 10);
     }
   }
-  // Из URL — последний числовой сегмент
   const urlM = location.pathname.match(/\/(\d+)\/?$/);
   if (urlM) return parseInt(urlM[1], 10);
   return 1;
 }
 
-// DOM-fallback: собирает уже загруженные img из вьювера (если fetch не сработал)
 function collectYandexPageImageUrls() {
   const result = [];
   const seen   = new Set();
@@ -1262,19 +1176,13 @@ function collectYandexPageImageUrls() {
   return result.sort((a, b) => (b.w * b.h) - (a.w * a.h));
 }
 
-// ── ЦГА Москвы / МНА (cgamos.ru, mos-nha.ru) ─────────────────────────────────
-//
-// ЦГА Москвы использует несколько систем просмотра в зависимости от фонда.
-// Определяем тип вьювера по наличию ЭЛАР-тайлов или обычных img.
+// ── ЦГА Москвы / МНА ─────────────────────────────────────────────────────────
 
 function isCgamosPage() {
   return ['cgamos.ru', 'www.cgamos.ru', 'mos-nha.ru', 'www.mos-nha.ru']
     .includes(location.hostname);
 }
 
-// Тип вьювера на текущей странице ЦГА Москвы:
-// 'elar'   — ЭЛАР DeepZoom (ImageFile.ashx)
-// 'dom'    — DOM-сбор img-элементов (универсальный запасной вариант)
 function getCgamosViewerType() {
   if (
     document.querySelector('img[src*="ImageFile.ashx"]') ||
@@ -1284,7 +1192,7 @@ function getCgamosViewerType() {
 }
 
 function getCgamosGuid() {
-    const GUID_RE = /[?&][Ii]d=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+  const GUID_RE = /[?&][Ii]d=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   for (const sel of ['img[src*="ImageFile.ashx"]', 'img[src*="ImageFilePart.ashx"]',
                      'input[type="hidden"][id*="fileId"]', 'input[type="hidden"][id*="FileId"]']) {
     const el = document.querySelector(sel);
@@ -1297,7 +1205,6 @@ function getCgamosGuid() {
 }
 
 function getCgamosDocId() {
-  // Числовой ID дела из URL
   const m = location.pathname.match(/\/(?:syl|unit|delo|fund|fond|doc)\/(\d+)/i) ||
             location.search.match(/[?&](?:id|unitId|ItemId)=(\d+)/i);
   if (m) return m[1];
@@ -1309,7 +1216,6 @@ function getCgamosDocId() {
   return 'doc_' + Date.now();
 }
 
-// Сбор DOM-изображений для ЦГА Москвы (запасной путь)
 function collectCgamosPageImageUrls() {
   const result = [];
   const seen   = new Set();
@@ -1332,7 +1238,6 @@ function getCgamosCurrentPage() {
     const n = parseInt(tb.value);
     if (!isNaN(n) && n > 0) return n;
   }
-  // Тайл
   const tileImg = document.querySelector('img[src*="ImageFile.ashx"][src*="page="]');
   if (tileImg) {
     const m = (tileImg.getAttribute('src') || '').match(/[?&]page=(\d+)/);
@@ -1341,11 +1246,7 @@ function getCgamosCurrentPage() {
   return 1;
 }
 
-// ── ЦГА Москвы — SPA-вьювер (metric-books и аналоги) ─────────────────────────
-//
-// Разделы metric-books, skazki, ispovedalnye_vedomosti и др. используют
-// SPA-вьювер с пагинацией через input + Enter. Изображение рендерится как
-// <canvas> или <img>. Захватываем через canvas.toDataURL().
+// ── ЦГА Москвы — SPA-вьювер ───────────────────────────────────────────────────
 
 const CGAMOS_SPA_PATHS = /\/(metric-books|skazki|ispovedalnye_vedomosti|obyski|cemetery|books-of-moscow-maternity-hospitals|l-dela|posemeynye-spiski|inye-konfessii)\//i;
 
@@ -1354,7 +1255,6 @@ function isCgamosSpaPage() {
 }
 
 function getCgamosSpaTotal() {
-  // Специализированный класс счётчика
   const countNode = document.querySelector(
     '.inventory-count-picture.ref-count-picture, .inventory-count-picture, .ref-count-picture'
   );
@@ -1362,7 +1262,6 @@ function getCgamosSpaTotal() {
     const m = (countNode.textContent || '').match(/(\d{1,5})/);
     if (m) return parseInt(m[1], 10);
   }
-  // Паттерн «N из M» или «N / M» в теле страницы
   const body = ((document.body?.innerText || '') + (document.body?.textContent || '')).replace(/\s+/g, ' ');
   const m1 = body.match(/\b(\d{1,5})\s*из\s*(\d{1,5})\b/i);
   if (m1) return parseInt(m1[2], 10);
@@ -1371,7 +1270,6 @@ function getCgamosSpaTotal() {
   return null;
 }
 
-// Находит input-поле пагинатора SPA ЦГА Москвы
 function getCgamosSpaPagerInput() {
   let best = null, bestScore = -1;
   for (const inp of document.querySelectorAll('input')) {
@@ -1394,7 +1292,6 @@ function getCgamosSpaCurrent() {
   return 1;
 }
 
-// Навигирует SPA-вьювер на указанную страницу через пагинатор
 function goToCgamosPage(pageNumber) {
   const inp = getCgamosSpaPagerInput();
   if (!inp) return false;
@@ -1408,7 +1305,6 @@ function goToCgamosPage(pageNumber) {
   return true;
 }
 
-// Захватывает текущую страницу как data-URL через canvas или img
 function extractCgamosRenderedImage() {
   function visibleArea(rect) {
     const vw = window.innerWidth  || document.documentElement.clientWidth  || 0;
@@ -1443,7 +1339,6 @@ function extractCgamosRenderedImage() {
   }
 }
 
-// Ждёт полностью отрендеренного скана SPA (минимум ~50 KB base64 data-URL)
 async function waitForCgamosSpaRender(targetPage, timeoutMs = 20000) {
   const startedAt = Date.now();
   const MIN_DATA_LEN = 50000;
@@ -1458,7 +1353,6 @@ async function waitForCgamosSpaRender(targetPage, timeoutMs = 20000) {
   throw new Error(`Тайм-аут ожидания страницы ${targetPage}`);
 }
 
-// Конвертирует data-URL в Uint8Array байтов
 function dataUrlToBytes(dataUrl) {
   const base64Index = dataUrl.indexOf('base64,');
   if (base64Index < 0) throw new Error('Неверный data-URL');
@@ -1469,29 +1363,18 @@ function dataUrlToBytes(dataUrl) {
 }
 
 // ── КАИСА-Архив ────────────────────────────────────────────────────────────────
-//
-// КАИСА-Архив использует вьювер на базе viewer.js (Fengyuan Chen).
-// Все изображения документа предзагружены в DOM как <img> в .viewer-list.
-// Текущий скан — в .viewer-canvas > img.
-// Навигация: пагинатор с "Страница N из M" в .viewer-title.
-//
-// URL формат: /site/private/imageViewer/image?url=ENCODED_TOKEN
-// Токены уже встроены в HTML страницы — дополнительных API-запросов не нужно.
 
 function isKaisaPage() {
-  // Детектируем по URL вьювера в src изображений
   return !!(
     document.querySelector('img[src*="/imageViewer/image"]') ||
     document.querySelector('.viewer-canvas')
   );
 }
 
-// Собирает все URL изображений документа из DOM (viewer-list или viewer-canvas)
 function getKaisaImageUrls() {
   const seen = new Set();
   const result = [];
 
-  // Приоритет: viewer-list thumbnails (все страницы)
   for (const img of document.querySelectorAll('[class*="viewer-list"] img, .viewer-list img')) {
     const src = img.getAttribute('data-original') || img.getAttribute('src') || '';
     if (src && src.includes('imageViewer') && !seen.has(src)) {
@@ -1500,7 +1383,6 @@ function getKaisaImageUrls() {
     }
   }
 
-  // Запасной вариант: ищем все img с imageViewer в src
   if (!result.length) {
     for (const img of document.querySelectorAll('img[src*="imageViewer/image"]')) {
       const src = img.getAttribute('src') || '';
@@ -1515,13 +1397,11 @@ function getKaisaImageUrls() {
 }
 
 function getKaisaTotalPages() {
-  // "Страница N из M" в .viewer-title
   const title = document.querySelector('.viewer-title, [id*="viewerTitle"]');
   if (title) {
     const m = (title.textContent || '').match(/(\d+)\s+из\s+(\d+)/);
     if (m) return parseInt(m[2], 10);
   }
-  // Запасной: считаем токены в DOM
   const urls = getKaisaImageUrls();
   return urls.length || null;
 }
@@ -1536,7 +1416,6 @@ function getKaisaCurrentPage() {
 }
 
 function getKaisaDocId() {
-  // ID документа из URL: /private/documents/123456
   const m = location.pathname.match(/\/(?:documents|document|unit|delo|imageViewer\/show)\/(\d+)/i) ||
             location.search.match(/[?&](?:objectId|id|documentId)=(\d+)/i);
   if (m) return m[1];
@@ -1571,7 +1450,7 @@ async function downloadAllKaisa(overrideFrom = null, overrideTo = null) {
     }
 
     const totalPages = imgUrls.length;
-    const from  = Math.max(1, overrideFrom ?? 1) - 1; // 0-indexed
+    const from  = Math.max(1, overrideFrom ?? 1) - 1;
     const to    = Math.min(totalPages, overrideTo ?? totalPages) - 1;
     const total = to - from + 1;
     const padWidth = String(totalPages).length || 3;
@@ -1592,12 +1471,16 @@ async function downloadAllKaisa(overrideFrom = null, overrideTo = null) {
         ? `${folderName}/${pad(pageNum, padWidth)}.jpg`
         : `kaisa_${docId}_p${pad(pageNum, padWidth)}.jpg`;
 
-      // Make URL absolute
       const rawUrl = imgUrls[i];
       const absUrl = rawUrl.startsWith('http') ? rawUrl : `${location.origin}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
 
       const success = await downloadWithSemaphore(absUrl, filename);
-      if (!success) failedPages.push(pageNum);
+      if (!success) {
+        failedPages.push(pageNum);
+        if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+      } else {
+        throttle.onSuccess();
+      }
 
       await sleep(throttle.delay);
     }
@@ -1703,23 +1586,19 @@ async function generatePDFKaisa(overrideFrom = null, overrideTo = null) {
 // ── Универсальный определитель адаптера ──────────────────────────────────────
 
 function getAdapterInfo() {
-  // КАИСА-Архив
   if (isKaisaPage()) {
     const unitId = getKaisaDocId();
     return { type: 'kaisa', unitId };
   }
-  // Яндекс Архив
   if (isYandexArchivePage()) {
     const unitId = getYandexArchiveDocId();
     return { type: 'yandex', unitId };
   }
-  // ЦГА Москвы / МНА — SPA-вьювер (metric-books и др.)
   if (isCgamosSpaPage()) {
     const unitId = getCgamosDocId();
     const total  = getCgamosSpaTotal();
     return { type: 'cgamos-spa', unitId, total };
   }
-  // ЦГА Москвы / МНА — ЭЛАР DeepZoom
   if (isCgamosPage()) {
     const vType  = getCgamosViewerType();
     const unitId = getCgamosDocId();
@@ -1730,19 +1609,16 @@ function getAdapterInfo() {
     }
     return unitId ? { type: 'cgamos-dom', unitId } : null;
   }
-  // VRR (Костромской читальный зал и совместимые)
   if (isVrrPage()) {
     const unitId = getVrrUnitId();
     return unitId ? { type: 'vrr', unitId } : null;
   }
-  // ЭЛАР (Воронежский архив и подобные)
   if (isArsvoPage()) {
     const guid   = getArsvoGuid();
     if (!guid) return null;
     const unitId = getArsvoUnitId() || guid.replace(/-/g, '').slice(0, 12);
     return { type: 'arsvo', unitId, guid };
   }
-  // Стандартный режим (прямые URL изображений)
   const unitId = getUnitId();
   return unitId ? { type: 'yar', unitId } : null;
 }
@@ -1754,11 +1630,11 @@ async function detectArchiveNum(unit) {
 
   const fromPath = location.pathname.match(/\/archive(\d+)\//)?.[1];
   if (fromPath) { cachedArchNum = fromPath; return fromPath; }
-
-  const known = ARCHIVE_NUM_MAP[location.hostname];
+  const hostname = location.hostname;
+  const known = ARCHIVE_NUM_MAP[hostname];
   if (known) {
     const ok = await testImage(
-      `${location.origin}/archive${known}/image/${unit}?n=1&_ts=${Date.now()}`, 4000
+      `${location.origin}/archive${known}/${getArchiveImageSuffix()}/${unit}?n=1&_ts=${Date.now()}`, 4000
     );
     if (ok) { cachedArchNum = known; return known; }
   }
@@ -1767,7 +1643,7 @@ async function detectArchiveNum(unit) {
   for (const n of ARCHIVE_PROBE_CANDIDATES) {
     if (n === known) continue;
     const ok = await testImage(
-      `${location.origin}/archive${n}/image/${unit}?n=1&_ts=${Date.now()}`, 4000
+      `${location.origin}/archive${n}/${getArchiveImageSuffix()}/${unit}?n=1&_ts=${Date.now()}`, 4000
     );
     if (ok) { cachedArchNum = n; return n; }
   }
@@ -1990,7 +1866,7 @@ function downloadErrorLog(folderName, failedPages) {
 // ── История загрузок ──────────────────────────────────────────────────────────
 
 const HISTORY_KEY     = 'rad_history';
-const HISTORY_MAX_LEN = 10000; // unlimited effectively
+const HISTORY_MAX_LEN = 10000;
 
 function saveHistory(entry) {
   chrome.storage.local.get({ [HISTORY_KEY]: [] }, data => {
@@ -2004,8 +1880,6 @@ function saveHistory(entry) {
 }
 
 // ── PDF: Worker-based assembly ────────────────────────────────────────────────
-// Выносит сборку PDF в dedicated Worker чтобы не блокировать вкладку.
-// Без лимита страниц — Worker не ограничен кучей вкладки.
 
 async function buildPDFViaWorker(pages, progressCb) {
   return new Promise((resolve, reject) => {
@@ -2013,7 +1887,6 @@ async function buildPDFViaWorker(pages, progressCb) {
     try {
       worker = new Worker(chrome.runtime.getURL('pdf-worker.js'));
     } catch (e) {
-      // Worker недоступен (например, в тестах) — fallback на синхронный buildPDF
       log('PDF Worker недоступен, используем синхронную сборку:', e.message);
       resolve(buildPDF(pages));
       return;
@@ -2033,7 +1906,6 @@ async function buildPDFViaWorker(pages, progressCb) {
 
     worker.onerror = (e) => {
       worker.terminate();
-      // Fallback
       log('PDF Worker error, falling back:', e.message);
       try { resolve(buildPDF(pages)); } catch(fe) { reject(fe); }
     };
@@ -2151,7 +2023,7 @@ async function probeUrl(url) {
   }
 }
 
-// ── Вспомогательный финализатор для download-функций ─────────────────────────
+// ── Вспомогательный финализатор ───────────────────────────────────────────────
 
 function _cleanupAfterDownload() {
   isRunning = false; isPaused = false; isStopped = false;
@@ -2161,7 +2033,7 @@ function _cleanupAfterDownload() {
   setIcon('inactive');
 }
 
-// ── Генерация PDF ───────────────────────────────────────────────────────────────
+// ── Генерация PDF ─────────────────────────────────────────────────────────────
 
 async function generatePDF(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
@@ -2208,8 +2080,6 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
       );
       return;
     }
-
-
 
     const pagesData = [];
     const failedNums = new Set();
@@ -2421,7 +2291,7 @@ async function generatePDFVRR(overrideFrom = null, overrideTo = null) {
   }
 }
 
-// ── Генерация PDF ─────────────────────────────────────────────────────
+// ── Генерация PDF — ЭЛАР ──────────────────────────────────────────────────────
 
 async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
@@ -2471,7 +2341,6 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
       if (bytes) {
         throttle.onSuccess();
       } else if (isElarSingleTileMode()) {
-        // Однотайловый режим: весь скан = один запрос
         try {
           const res = await fetch(elarSingleTileUrl(guid, p - 1));
           if (res.ok) {
@@ -2487,7 +2356,6 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
           failedNums.add(p);
         }
       } else {
-        // Многотайловый режим: сшивка через canvas
         try {
           const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1,
             t => sendStatus(`PDF/ЭЛАР: ${t}`));
@@ -2604,6 +2472,7 @@ async function generatePDFYandex(overrideFrom = null, overrideTo = null) {
           if (e.message === 'stopped') throw e;
           log('PDF/Yandex error p' + p, e);
           sendStatus(`PDF/Яндекс: пропуск стр. ${p} — ${e.message}`);
+          throttle.onRateLimit(0);
           failedNums.add(p);
         }
       }
@@ -2640,7 +2509,7 @@ async function generatePDFYandex(overrideFrom = null, overrideTo = null) {
   }
 }
 
-// ── Генерация PDF — ЦГА Москвы ────────────────────────────────
+// ── Генерация PDF — ЦГА Москвы ───────────────────────────────────────────────
 
 async function generatePDFCgamosArsvo(guid, unitId, overrideFrom, overrideTo) {
   const cfg = await ensureSettings();
@@ -2780,6 +2649,8 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
 
     const padWidth    = String(total).length || 3;
     const failedPages = [];
+    // Зондирование каждые 20 страниц остаётся как запасной механизм для
+    // получения точного HTTP-статуса (нужен для корректного throttle.onRateLimit)
     const PROBE_EVERY = 20;
 
     for (let p = pFrom; p <= total; p++) {
@@ -2797,7 +2668,12 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
         : `unit_${unit}_p${pad(p, padWidth)}.jpg`;
 
       const success = await downloadWithSemaphore(imageUrl(unit, archNum, p), filename);
-      if (!success) failedPages.push(p);
+      if (!success) {
+        failedPages.push(p);
+        if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+      } else {
+        throttle.onSuccess();
+      }
 
       if (p % 10 === 0) {
         saveResumeState(unit, { lastPage: p, totalPages: total, folderName, fromPage: pFrom });
@@ -2842,7 +2718,7 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
 
   throttle.configure(cfg.delayMs, cfg.adaptiveSpeed);
   throttle.reset();
-  dlSemaphore.setLimit(1); // VRR: только последовательно (canvas-навигация)
+  dlSemaphore.setLimit(1);
   setIcon('active');
 
   try {
@@ -2861,7 +2737,6 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
       await sleep(3000);
     }
 
-    // Пробуем прямой URL — если нет, используем canvas
     sendStatus('VRR: определение способа загрузки…');
     const directPrefix = await probeVrrDirectPrefix(unitId, offsets[0]);
     const useCanvas    = directPrefix === '';
@@ -2895,7 +2770,6 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
         : `unit_${unitId}_p${pad(pageNum, padWidth)}.jpg`;
 
       if (useCanvas) {
-        // Canvas-режим: клик на миниатюру → ждём смены → захват
         sendStatus(`VRR: переход к стр. ${pageNum} / ${offsets.length}…`);
         try {
           if (!navigateVrrToOffset(unitId, offsets[i])) {
@@ -2907,18 +2781,24 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
           prevFingerprint = getVrrCanvasFingerprint(canvas);
 
           chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
-          await sleep(300); // дать браузеру начать скачивание
+          throttle.onSuccess();
+          await sleep(300);
         } catch (e) {
           log('VRR canvas error p' + pageNum, e);
           if (e.message === 'stopped') throw e;
           sendStatus(`VRR: ошибка стр. ${pageNum} — ${e.message}`);
           failedPages.push(pageNum);
+          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
         }
       } else {
-        // Прямой URL-режим
         sendStatus(`VRR: скачивание стр. ${pageNum} / ${offsets.length}`);
         const success = await downloadWithSemaphore(vrrDirectImageUrl(unitId, offsets[i]), filename);
-        if (!success) failedPages.push(pageNum);
+        if (!success) {
+          failedPages.push(pageNum);
+          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+        } else {
+          throttle.onSuccess();
+        }
       }
 
       if (pageNum % 10 === 0) {
@@ -2945,7 +2825,7 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
   }
 }
 
-// ── Скачать весь документ ────────────────────────────────────────────
+// ── Скачать весь документ — ЭЛАР ─────────────────────────────────────────────
 
 async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
@@ -3014,21 +2894,29 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
         : `unit_${unitId}_p${pad(p, padWidth)}.jpg`;
 
       if (isElarSingleTileMode()) {
-        // Однотайловый режим: весь скан = один запрос
         const success = await downloadWithSemaphore(elarSingleTileUrl(guid, p - 1), filename);
-        if (!success) failedPages.push(p);
+        if (!success) {
+          failedPages.push(p);
+          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+        } else {
+          throttle.onSuccess();
+        }
       } else {
-        // Многотайловый режим: сшивка тайлов через canvas
         sendStatus(`ЭЛАР: сшивка стр. ${p} / ${totalPages}…`);
         try {
           const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(t));
           if (dataUrl) {
             chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+            throttle.onSuccess();
             await sleep(400);
-          } else { failedPages.push(p); }
+          } else {
+            failedPages.push(p);
+            if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+          }
         } catch (e) {
           if (e.message === 'stopped') throw e;
           log('ЭЛАР stitch error p' + p, e); failedPages.push(p);
+          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
         }
       }
 
@@ -3058,10 +2946,9 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
   }
 }
 
-// ── Яндекс Архив: SPA-навигация ─────────────────────────────────────────────
-// Найти input пагинатора текущей страницы
+// ── Яндекс Архив: SPA-навигация ──────────────────────────────────────────────
+
 function getYandexPagerInput() {
-  // Ищем input рядом с "/" и числом страниц
   for (const inp of document.querySelectorAll('input')) {
     const val = (inp.value || '').trim();
     if (!/^\d{1,5}$/.test(val)) continue;
@@ -3073,7 +2960,6 @@ function getYandexPagerInput() {
   return null;
 }
 
-// Перейти на страницу pageNumber через пагинатор SPA
 function navigateYandexToPage(pageNumber) {
   const inp = getYandexPagerInput();
   if (!inp) return false;
@@ -3087,7 +2973,6 @@ function navigateYandexToPage(pageNumber) {
   return true;
 }
 
-// Ждёт обновления canvas после навигации.
 async function waitForYandexPageRender(targetPage, timeoutMs = 25000) {
   const MIN_CANVAS_BYTES = 8000;
   const startedAt = Date.now();
@@ -3095,11 +2980,9 @@ async function waitForYandexPageRender(targetPage, timeoutMs = 25000) {
   while (Date.now() - startedAt < timeoutMs) {
     if (isStopped) throw new Error('stopped');
 
-    // Проверяем, что пагинатор показывает нужный номер
     const pagerOk = getYandexArchiveCurrentPage() === targetPage;
 
     if (pagerOk) {
-      // Ищем валидный canvas
       let bestUrl = null;
       for (const canvas of document.querySelectorAll('canvas')) {
         const w = canvas.width  || 0;
@@ -3115,7 +2998,6 @@ async function waitForYandexPageRender(targetPage, timeoutMs = 25000) {
       }
       if (bestUrl) return bestUrl;
 
-      // Ищем через live DOM
       const domResult = extractBestImageFromLiveDom();
       if (domResult?.url && !domResult.isCanvas && isAllowedYandexCandidate(domResult.url)) {
         return domResult.url;
@@ -3140,7 +3022,7 @@ async function downloadAllYandex(overrideFrom = null, overrideTo = null) {
 
   throttle.configure(cfg.delayMs, cfg.adaptiveSpeed);
   throttle.reset();
-  dlSemaphore.setLimit(1); // Только последовательно — SPA-навигация
+  dlSemaphore.setLimit(1);
   setIcon('active');
 
   try {
@@ -3169,7 +3051,6 @@ async function downloadAllYandex(overrideFrom = null, overrideTo = null) {
       sendStatus(`Яндекс Архив: переход к стр. ${p} / ${to}…`);
 
       try {
-        // Навигируем на страницу если нужно
         if (getYandexArchiveCurrentPage() !== p) {
           if (!navigateYandexToPage(p)) {
             sendStatus(`Яндекс Архив: пагинатор не найден (стр. ${p})`);
@@ -3191,6 +3072,7 @@ async function downloadAllYandex(overrideFrom = null, overrideTo = null) {
         if (e.message === 'stopped') throw e;
         log('Yandex page error p' + p, e);
         sendStatus(`Яндекс Архив: ошибка стр. ${p} — ${e.message}`);
+        if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
         failedPages.push(p);
       }
 
@@ -3260,7 +3142,12 @@ async function downloadAllCgamos(overrideFrom = null, overrideTo = null) {
           : `cgamos_${docId}_p${pad(p, padWidth)}.jpg`;
 
         const success = await downloadWithSemaphore(arsvoImageUrl(guid, p - 1), filename);
-        if (!success) failedPages.push(p);
+        if (!success) {
+          failedPages.push(p);
+          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+        } else {
+          throttle.onSuccess();
+        }
 
         if (p % 10 === 0) saveResumeState(docId, { lastPage: p, totalPages, folderName, fromPage: pFrom });
         await sleep(throttle.delay);
@@ -3278,7 +3165,6 @@ async function downloadAllCgamos(overrideFrom = null, overrideTo = null) {
         timestamp: Date.now(), url: location.href, format: 'jpg' });
 
     } else {
-      // DOM-сбор (запасной вариант)
       sendStatus('ЦГА Москвы: сбор изображений со страницы…');
       const pageImgs = collectCgamosPageImageUrls();
 
@@ -3308,7 +3194,12 @@ async function downloadAllCgamos(overrideFrom = null, overrideTo = null) {
           : `cgamos_${docId}_p${pad(pageNum, padWidth)}.jpg`;
 
         const success = await downloadWithSemaphore(pageImgs[i].url, filename);
-        if (!success) failedPages.push(pageNum);
+        if (!success) {
+          failedPages.push(pageNum);
+          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+        } else {
+          throttle.onSuccess();
+        }
         await sleep(throttle.delay);
       }
 
@@ -3350,11 +3241,9 @@ async function downloadCurrent() {
       : `unit_${adapter.unitId}_p${pad(pageNum, 3)}.jpg`;
 
     if (_vrrDirectPrefix) {
-      // Прямой URL работает
       chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: vrrDirectImageUrl(adapter.unitId, offset), filename });
       sendStatus(`Скачана стр. ${pageNum}`);
     } else {
-      // Canvas-захват текущей страницы
       const cv = getVrrCanvas();
       if (!cv) { sendStatus('VRR: canvas не найден'); return; }
       const dataUrl = cv.toDataURL('image/jpeg', 0.95);
@@ -3500,7 +3389,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             setIcon('inactive');
           });
       }
-      else if (adapter.type === 'cgamos-dom')   generatePDFYandex(from, to); // DOM-collect fallback
+      else if (adapter.type === 'cgamos-dom')   generatePDFYandex(from, to);
       else                                        generatePDF(from, to);
       break;
     }
@@ -3529,7 +3418,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       let previewUrl = null;
       if (adapter?.type === 'vrr') {
         const offs = getVrrPageOffsets(unit);
-        // Превью: если canvas доступен — снимок canvas, иначе миниатюра
         const cv = getVrrCanvas();
         if (cv) {
           try {
