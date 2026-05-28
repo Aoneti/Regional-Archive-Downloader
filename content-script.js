@@ -57,7 +57,16 @@ const ARCHIVE_PROBE_CANDIDATES = [
 ];
 
 const PDF_PAGE_HARD_LIMIT = 5000;
-const DOWNLOAD_TIMEOUT_MS = 60_000;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+
+let _pdfCacheUnit = null;
+
+function _clearPDFCache() {
+  if (_pdfCacheUnit) {
+    _pdfCacheUnit = _pdfCacheUnit; imgCacheClear(_pdfCacheUnit).catch(() => {});
+    _pdfCacheUnit = null;
+  }
+}
 
 // ── Кэш номера архива ─────────────────────────────────────────────────────────
 let cachedArchNum = null;
@@ -69,6 +78,22 @@ function getArchiveImageSuffix() {
   _archiveImageSuffix = invImg ? 'image-inv' : 'image';
   log('archive image suffix detected:', _archiveImageSuffix);
   return _archiveImageSuffix;
+}
+
+// ── Утилиты безопасности ─────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+function safeHref(url) {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
 }
 
 // ── IndexedDB ─────────────────────────────────────────────────────────────────
@@ -111,6 +136,7 @@ function idbOpen() {
     req.onerror = ({ target: { error } }) => {
       _idbDead = true;
       log('IDB open failed, using storage.local fallback:', error);
+      setTimeout(() => { _idbDead = false; }, 30_000);
       reject(error);
     };
 
@@ -138,6 +164,31 @@ function idbTx(storeName, mode, fn) {
 }
 
 // ── Resume-state API ──────────────────────────────────────────────────────────
+const RESUME_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 дней
+
+async function sweepOldResumeStates() {
+  try {
+    const db = await idbOpen();
+    await new Promise(resolve => {
+      const tx  = db.transaction('resume', 'readwrite');
+      const req = tx.objectStore('resume').openCursor();
+      const now = Date.now();
+      req.onsuccess = ({ target: { result: cursor } }) => {
+        if (!cursor) return;
+        const savedAt = cursor.value?.savedAt ?? 0;
+        if (now - savedAt > RESUME_TTL_MS) {
+          cursor.delete();
+          log('sweepResume: удалена запись для unit', cursor.value?.unit);
+        }
+        cursor.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => resolve();
+    });
+  } catch (e) {
+    log('sweepOldResumeStates failed:', e);
+  }
+}
 
 const resumeKey = unit => `rad_resume_${unit}`;
 
@@ -201,7 +252,7 @@ async function imgCacheGet(unit, page) {
 function imgCachePut(unit, page, bytes) {
   idbTx('imgcache', 'readwrite', store =>
     store.put({ cacheKey: imgCacheKey(unit, page), unit, page, bytes, cachedAt: Date.now() })
-  ).catch(() => {});
+  ).catch(e => log('imgCachePut failed (unit=%s page=%d):', unit, page, e));
 }
 
 async function imgCacheClear(unit) {
@@ -221,7 +272,6 @@ async function imgCacheClear(unit) {
 }
 
 // ── Адаптивный троттлер ───────────────────────────────────────────────────────
-
 class AdaptiveThrottle {
   constructor() {
     this.baseDelay    = 250;
@@ -274,7 +324,6 @@ class AdaptiveThrottle {
 const throttle = new AdaptiveThrottle();
 
 // ── Состояние загрузки ────────────────────────────────────────────────────────
-
 const TEST_TIMEOUT   = 6000;
 const RETRY_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 400;
@@ -294,7 +343,6 @@ async function waitIfPaused() {
 }
 
 // ── Хелперы общения с background/popup ───────────────────────────────────────
-
 function sendStatus(text) {
   chrome.runtime.sendMessage({ type: 'STATUS', text });
 }
@@ -313,7 +361,6 @@ function setIcon(state) {
 }
 
 // ── Утилиты DOM / URL ─────────────────────────────────────────────────────────
-
 function getUnitId() {
   // Стандартный путь: /unit/12345
   const m = location.pathname.match(/\/unit\/(\d+)/);
@@ -758,9 +805,6 @@ function arsvoImageUrl(guid, pageIndex) {
   return `${location.origin}/Pages/ImageFilePart.ashx?Crop=False&Id=${guid}&Page=${pageIndex}&Zoom=1`;
 }
 
-const _arsvoFullPageOk = false;
-async function probeArsvoFullPage(guid) { return false; }
-
 function arsvoTileUrl(guid, pageIndex, level, x, y, tileSize = 800, overlap = 1) {
   return `${location.origin}/Pages/ImageFile.ashx?level=${level}&x=${x}&y=${y}` +
     `&tileSize=${tileSize}&tileOverlap=${overlap}&id=${guid}&page=${pageIndex}&rotation=0&searchtext=`;
@@ -817,16 +861,26 @@ async function tileExists(url) {
 }
 
 async function probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap) {
+  const MAX_AXIS = 40;
+  const xResults = await Promise.all(
+    Array.from({ length: MAX_AXIS }, (_, x) =>
+      tileExists(arsvoTileUrl(guid, pageIndex, level, x, 0, tileSize, overlap))
+    )
+  );
   let cols = 0;
-  for (let x = 0; x < 40; x++) {
-    if (!await tileExists(arsvoTileUrl(guid, pageIndex, level, x, 0, tileSize, overlap))) break;
+  for (let x = 0; x < MAX_AXIS; x++) {
+    if (!xResults[x]) break;
     cols = x + 1;
   }
   if (cols === 0) return { cols: 0, rows: 0 };
-
+  const yResults = await Promise.all(
+    Array.from({ length: MAX_AXIS }, (_, y) =>
+      tileExists(arsvoTileUrl(guid, pageIndex, level, 0, y, tileSize, overlap))
+    )
+  );
   let rows = 0;
-  for (let y = 0; y < 40; y++) {
-    if (!await tileExists(arsvoTileUrl(guid, pageIndex, level, 0, y, tileSize, overlap))) break;
+  for (let y = 0; y < MAX_AXIS; y++) {
+    if (!yResults[y]) break;
     rows = y + 1;
   }
   return { cols, rows };
@@ -845,6 +899,7 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   const ctx = canvas.getContext('2d');
 
   let loaded = 0;
+  let failed = 0;
   const total = cols * rows;
 
   await Promise.all(
@@ -855,10 +910,15 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
           img.crossOrigin = 'anonymous';
           img.onload = () => {
             ctx.drawImage(img, x * tileSize, y * tileSize);
-            progressCb?.(`ЭЛАР: тайл ${++loaded}/${total} (стр. ${pageIndex + 1})`);
+            loaded++;
+            progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
             resolve();
           };
-          img.onerror = () => { loaded++; resolve(); };
+          img.onerror = () => {
+            failed++;
+            progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
+            resolve();
+          };
           img.src = arsvoTileUrl(guid, pageIndex, level, x, y, tileSize, overlap) + '&_ts=' + Date.now();
         })
       )
@@ -866,6 +926,13 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   );
 
   if (isStopped) throw new Error('stopped');
+  if (failed > total / 2) {
+    throw new Error(
+      `ЭЛАР: стр. ${pageIndex + 1} — ${failed}/${total} тайлов не загружены` +
+      (failed === total ? ' (возможно CORS-блокировка)' : '')
+    );
+  }
+
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 
@@ -955,9 +1022,7 @@ function getYandexPageUrl(pageNumber) {
 
 function looksLikeHtmlBytes(bytes) {
   if (!bytes || !bytes.length) return false;
-  let sample = '';
-  const limit = Math.min(bytes.length, 256);
-  for (let i = 0; i < limit; i++) sample += String.fromCharCode(bytes[i]);
+  const sample = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 256));
   return /^[\s\uFEFF]*<!doctype html|^[\s\uFEFF]*<html|^[\s\uFEFF]*<head|^[\s\uFEFF]*<body/i.test(sample);
 }
 
@@ -1102,34 +1167,6 @@ function extractBestImageFromLiveDom() {
   }
 
   return candidates.length ? { url: candidates[0].url, isCanvas: false } : null;
-}
-
-async function fetchYandexPageImage(pageNumber) {
-  const pageUrl = getYandexPageUrl(pageNumber);
-  const response = await fetch(pageUrl, { credentials: 'include' });
-  if (!response.ok) throw new Error(`Страница ${pageNumber}: HTTP ${response.status}`);
-  const html = await response.text();
-  const imageUrl = extractBestYandexImageFromHtml(html, pageUrl);
-  if (!imageUrl) throw new Error(`Страница ${pageNumber}: изображение не найдено`);
-  return { pageUrl, imageUrl };
-}
-
-async function getValidatedYandexBytes(url, pageNumber) {
-  const response = await fetch(url, { credentials: 'include' });
-  if (!response.ok) throw new Error(`Скан стр. ${pageNumber}: HTTP ${response.status}`);
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
-  const buffer = await response.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  if (contentType && !contentType.startsWith('image/')) {
-    throw new Error(`Стр. ${pageNumber}: не изображение (${contentType})`);
-  }
-  if (looksLikeHtmlBytes(bytes)) {
-    throw new Error(`Стр. ${pageNumber}: получен HTML вместо скана`);
-  }
-  if (bytes.length < 10000) {
-    throw new Error(`Стр. ${pageNumber}: файл слишком мал (${bytes.length} байт)`);
-  }
-  return bytes;
 }
 
 function getYandexArchiveTotalPages() {
@@ -1497,6 +1534,7 @@ async function downloadAllKaisa(overrideFrom = null, overrideTo = null) {
     if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAllKaisa:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
+    _clearPDFCache(); // FIX [Medium]: clear imgcache on any outcome
     _cleanupAfterDownload();
   }
 }
@@ -1515,6 +1553,10 @@ async function generatePDFKaisa(overrideFrom = null, overrideTo = null) {
   throttle.reset();
   setIcon('active');
 
+  const pdfSession = createPDFStreamSession(cur => {
+    if (cur % 10 === 0) sendStatus(`PDF/КАИСА: загружено ${cur} стр…`);
+  });
+
   try {
     const imgUrls = getKaisaImageUrls();
     if (!imgUrls.length) { sendDone('PDF/КАИСА: изображения не найдены.'); return; }
@@ -1528,8 +1570,7 @@ async function generatePDFKaisa(overrideFrom = null, overrideTo = null) {
       return;
     }
 
-    const filename  = `${sanitizeForFilename(titleRaw)}_${docId}.pdf`;
-    const pagesData = [];
+    const filename   = `${sanitizeForFilename(titleRaw)}_${docId}.pdf`;
     const failedNums = new Set();
 
     for (let i = from; i <= to; i++) {
@@ -1552,34 +1593,39 @@ async function generatePDFKaisa(overrideFrom = null, overrideTo = null) {
         } catch (e) { log('PDF/КАИСА error p' + pageNum, e); failedNums.add(pageNum); }
       }
 
-      if (bytes) pagesData.push({ bytes, ...parseJpegHeader(bytes) });
+      if (bytes) {
+        const { w, h, cs } = parseJpegHeader(bytes);
+        if (w > 0 && h > 0) pdfSession.addPage(bytes, w, h, cs);
+        else log('parseJpegHeader: skipping page with invalid dimensions');
+      }
       await sleep(throttle.delay);
     }
 
-    if (!pagesData.length) { sendDone('PDF/КАИСА: нет данных для сборки'); return; }
+    if (pdfSession.pageCount === 0) { sendDone('PDF/КАИСА: нет данных для сборки'); return; }
 
-    sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
-    const pdfBytes = await buildPDFViaWorker(pagesData, (c,t) => sendStatus(`PDF: ${c}/${t} стр…`));
+    sendStatus(`PDF: сборка ${pdfSession.pageCount} страниц…`);
+    const pdfBytes = await pdfSession.finish();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = filename; a.style.display = 'none';
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
-    imgCacheClear(docId).catch(() => {});
+    _pdfCacheUnit = docId; imgCacheClear(docId).catch(() => {});
 
     const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
-    sendDone(`PDF готов: ${pagesData.length} стр.${failNote}`,
+    sendDone(`PDF готов: ${pdfSession.pageCount} стр.${failNote}`,
       { isPDF: true, failedCount: failedNums.size });
     saveHistory({ unit: docId, title: titleRaw || `Документ ${docId}`,
-      pages: pagesData.length, timestamp: Date.now(), url: location.href, format: 'pdf' });
+      pages: pdfSession.pageCount, timestamp: Date.now(), url: location.href, format: 'pdf' });
 
   } catch (e) {
+    pdfSession.abort();
     if (e.message === 'stopped') sendDone('PDF: остановлено');
     else { console.error('[RAD] generatePDFKaisa:', e); sendDone('PDF: ошибка — ' + e.message); }
   } finally {
-    isRunning = false; isPaused = false; isStopped = false;
-    setIcon('inactive');
+    _clearPDFCache(); // FIX [Medium]: clear imgcache on any outcome
+    _cleanupAfterDownload(); // FIX [High]
   }
 }
 
@@ -1726,7 +1772,7 @@ class Semaphore {
   }
 
   drain() {
-    this._queue.forEach(r => r());
+    this._queue.forEach(r => r(false));
     this._queue = [];
     this._count = 0;
   }
@@ -1879,7 +1925,77 @@ function saveHistory(entry) {
   });
 }
 
-// ── PDF: Worker-based assembly ────────────────────────────────────────────────
+// ── PDF: Streaming session ─────────────────────────────────
+function createPDFStreamSession(statusCb) {
+  let worker      = null;
+  let fallbackPgs = null;
+  let pageCount   = 0;
+  let _resolve    = null;
+  let _reject     = null;
+
+  try {
+    worker = new Worker(chrome.runtime.getURL('pdf-worker.js'));
+
+    worker.onmessage = ({ data }) => {
+      if (data.type === 'error') {
+        if (_reject) { _reject(new Error(data.message)); _resolve = _reject = null; }
+        if (worker) { worker.terminate(); worker = null; }
+      } else if (data.type === 'done') {
+        const result = new Uint8Array(data.buffer);
+        if (worker) { worker.terminate(); worker = null; }
+        if (_resolve) { _resolve(result); _resolve = _reject = null; }
+      }
+    };
+
+    worker.onerror = (e) => {
+      log('PDF Worker error:', e.message);
+      if (worker) { worker.terminate(); worker = null; }
+      if (_reject) { _reject(new Error('PDF Worker: ' + (e.message || 'неизвестная ошибка'))); _resolve = _reject = null; }
+    };
+
+    worker.postMessage({ type: 'START' });
+  } catch (e) {
+    log('PDF Worker недоступен, используем синхронную сборку:', e.message);
+    worker = null;
+    fallbackPgs = [];
+  }
+
+  return {
+    addPage(bytes, w, h, cs) {
+      pageCount++;
+      if (!worker) {
+        fallbackPgs.push({ bytes, w, h, cs });
+      } else {
+        const copy = bytes.slice();
+        worker.postMessage({ type: 'PAGE', buffer: copy.buffer, w, h, cs }, [copy.buffer]);
+      }
+      statusCb?.(pageCount);
+    },
+
+    get pageCount() { return pageCount; },
+
+    finish() {
+      if (pageCount === 0) return Promise.reject(new Error('PDF: нет страниц для сборки'));
+      if (!worker) {
+        return new Promise((resolve, reject) => {
+          try { resolve(buildPDF(fallbackPgs)); } catch (e) { reject(e); }
+        });
+      }
+      return new Promise((resolve, reject) => {
+        _resolve = resolve;
+        _reject  = reject;
+        worker.postMessage({ type: 'FINISH' });
+      });
+    },
+
+    abort() {
+      if (worker) { worker.terminate(); worker = null; }
+      fallbackPgs = null;
+    }
+  };
+}
+
+// ── PDF: Worker-based assembly ───────
 
 async function buildPDFViaWorker(pages, progressCb) {
   return new Promise((resolve, reject) => {
@@ -1935,10 +2051,11 @@ function parseJpegHeader(bytes) {
     if (segLen < 2) break;
     i += 2 + segLen;
   }
-  return { w: 2480, h: 3508, cs: '/DeviceGray' };
+  log('parseJpegHeader: SOF marker not found, skipping page');
+  return { w: 0, h: 0, cs: '/DeviceGray' };
 }
 
-// ── PDF: компоновщик ──────────────────────────────────────────────────────────
+// ── PDF: синхронный fallback-компоновщик ──────────────────────────────────────
 
 function buildPDF(pages) {
   const enc    = new TextEncoder();
@@ -2053,6 +2170,10 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
   throttle.reset();
   setIcon('active');
 
+  const pdfSession = createPDFStreamSession(cur => {
+    if (cur % 10 === 0) sendStatus(`PDF: загружено ${cur} стр…`);
+  });
+
   try {
     sendStatus('PDF: определение архива…');
     const archNum  = await detectArchiveNum(unit);
@@ -2081,7 +2202,6 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
       return;
     }
 
-    const pagesData = [];
     const failedNums = new Set();
 
     for (let p = start; p <= last; p++) {
@@ -2122,14 +2242,18 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
         else failedNums.add(p);
       }
 
-      if (bytes) pagesData.push({ bytes, ...parseJpegHeader(bytes) });
+      if (bytes) {
+        const { w, h, cs } = parseJpegHeader(bytes);
+        if (w > 0 && h > 0) pdfSession.addPage(bytes, w, h, cs);
+        else log('parseJpegHeader: skipping page with invalid dimensions');
+      }
       await sleep(throttle.delay);
     }
 
-    if (!pagesData.length) { sendDone('PDF: нет данных для сборки'); return; }
+    if (pdfSession.pageCount === 0) { sendDone('PDF: нет данных для сборки'); return; }
 
-    sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
-    const pdfBytes = await buildPDFViaWorker(pagesData, (c,t) => sendStatus(`PDF: ${c}/${t} стр…`));
+    sendStatus(`PDF: сборка ${pdfSession.pageCount} страниц…`);
+    const pdfBytes = await pdfSession.finish();
 
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
@@ -2139,24 +2263,25 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
 
-    imgCacheClear(unit).catch(() => {});
+    _pdfCacheUnit = unit; imgCacheClear(unit).catch(() => {});
 
     const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
-    sendDone(`PDF готов: ${pagesData.length} стр.${failNote}`,
+    sendDone(`PDF готов: ${pdfSession.pageCount} стр.${failNote}`,
       { isPDF: true, failedCount: failedNums.size });
 
     saveHistory({
       unit, title: titleRaw || `Документ ${unit}`,
-      pages: pagesData.length, timestamp: Date.now(),
+      pages: pdfSession.pageCount, timestamp: Date.now(),
       url: location.href, format: 'pdf'
     });
 
   } catch (e) {
+    pdfSession.abort();
     if (e.message === 'stopped') sendDone('PDF: остановлено');
     else { console.error('[RAD] generatePDF:', e); sendDone('PDF: ошибка — ' + e.message); }
   } finally {
-    isRunning = false; isPaused = false; isStopped = false;
-    setIcon('inactive');
+    _clearPDFCache();
+    _cleanupAfterDownload();
   }
 }
 
@@ -2177,6 +2302,10 @@ async function generatePDFVRR(overrideFrom = null, overrideTo = null) {
   throttle.configure(cfg.delayMs, cfg.adaptiveSpeed);
   throttle.reset();
   setIcon('active');
+
+  const pdfSession = createPDFStreamSession(cur => {
+    if (cur % 10 === 0) sendStatus(`PDF/VRR: загружено ${cur} стр…`);
+  });
 
   try {
     const offsets    = getVrrPageOffsets(unitId);
@@ -2213,7 +2342,6 @@ async function generatePDFVRR(overrideFrom = null, overrideTo = null) {
       return;
     }
 
-    const pagesData  = [];
     const failedNums = new Set();
     let   prevFingerprint = canvas ? getVrrCanvasFingerprint(canvas) : '';
 
@@ -2259,35 +2387,40 @@ async function generatePDFVRR(overrideFrom = null, overrideTo = null) {
         }
       }
 
-      if (bytes) pagesData.push({ bytes, ...parseJpegHeader(bytes) });
+      if (bytes) {
+        const { w, h, cs } = parseJpegHeader(bytes);
+        if (w > 0 && h > 0) pdfSession.addPage(bytes, w, h, cs);
+        else log('parseJpegHeader: skipping page with invalid dimensions');
+      }
       await sleep(useCanvas ? Math.max(throttle.delay, 400) : throttle.delay);
     }
 
-    if (!pagesData.length) { sendDone('PDF/VRR: нет данных для сборки'); return; }
+    if (pdfSession.pageCount === 0) { sendDone('PDF/VRR: нет данных для сборки'); return; }
 
-    sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
-    const pdfBytes = await buildPDFViaWorker(pagesData, (c,t) => sendStatus(`PDF: ${c}/${t} стр…`));
+    sendStatus(`PDF: сборка ${pdfSession.pageCount} страниц…`);
+    const pdfBytes = await pdfSession.finish();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = filename; a.style.display = 'none';
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
-    imgCacheClear(unitId).catch(() => {});
+    _pdfCacheUnit = unitId; imgCacheClear(unitId).catch(() => {});
 
     const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
-    sendDone(`PDF готов: ${pagesData.length} стр.${failNote}`,
+    sendDone(`PDF готов: ${pdfSession.pageCount} стр.${failNote}`,
       { isPDF: true, failedCount: failedNums.size });
 
     saveHistory({ unit: unitId, title: titleRaw || `Документ ${unitId}`,
-      pages: pagesData.length, timestamp: Date.now(), url: location.href, format: 'pdf' });
+      pages: pdfSession.pageCount, timestamp: Date.now(), url: location.href, format: 'pdf' });
 
   } catch (e) {
+    pdfSession.abort();
     if (e.message === 'stopped') sendDone('PDF: остановлено');
     else { console.error('[RAD] generatePDFVRR:', e); sendDone('PDF: ошибка — ' + e.message); }
   } finally {
-    isRunning = false; isPaused = false; isStopped = false;
-    setIcon('inactive');
+    _clearPDFCache();
+    _cleanupAfterDownload();
   }
 }
 
@@ -2310,6 +2443,10 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
   throttle.reset();
   setIcon('active');
 
+  const pdfSession = createPDFStreamSession(cur => {
+    if (cur % 10 === 0) sendStatus(`PDF/ЭЛАР: загружено ${cur} стр…`);
+  });
+
   try {
     sendStatus('PDF/ЭЛАР: определение количества страниц…');
     const totalPages = await findTotalPagesARSVO(guid, cfg.maxPages, t => sendStatus(`PDF: ${t}`));
@@ -2328,7 +2465,6 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
       return;
     }
 
-    const pagesData  = [];
     const failedNums = new Set();
 
     for (let p = from; p <= to; p++) {
@@ -2371,35 +2507,40 @@ async function generatePDFARSVO(overrideFrom = null, overrideTo = null) {
         }
       }
 
-      if (bytes) pagesData.push({ bytes, ...parseJpegHeader(bytes) });
+      if (bytes) {
+        const { w, h, cs } = parseJpegHeader(bytes);
+        if (w > 0 && h > 0) pdfSession.addPage(bytes, w, h, cs);
+        else log('parseJpegHeader: skipping page with invalid dimensions');
+      }
       await sleep(throttle.delay);
     }
 
-    if (!pagesData.length) { sendDone('PDF/ЭЛАР: нет данных для сборки'); return; }
+    if (pdfSession.pageCount === 0) { sendDone('PDF/ЭЛАР: нет данных для сборки'); return; }
 
-    sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
-    const pdfBytes = await buildPDFViaWorker(pagesData, (c,t) => sendStatus(`PDF: ${c}/${t} стр…`));
+    sendStatus(`PDF: сборка ${pdfSession.pageCount} страниц…`);
+    const pdfBytes = await pdfSession.finish();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = filename; a.style.display = 'none';
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
-    imgCacheClear(unitId).catch(() => {});
+    _pdfCacheUnit = unitId; imgCacheClear(unitId).catch(() => {});
 
     const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
-    sendDone(`PDF готов: ${pagesData.length} стр.${failNote}`,
+    sendDone(`PDF готов: ${pdfSession.pageCount} стр.${failNote}`,
       { isPDF: true, failedCount: failedNums.size });
 
     saveHistory({ unit: unitId, title: titleRaw || `Документ ${unitId}`,
-      pages: pagesData.length, timestamp: Date.now(), url: location.href, format: 'pdf' });
+      pages: pdfSession.pageCount, timestamp: Date.now(), url: location.href, format: 'pdf' });
 
   } catch (e) {
+    pdfSession.abort();
     if (e.message === 'stopped') sendDone('PDF: остановлено');
     else { console.error('[RAD] generatePDFЭЛАР:', e); sendDone('PDF: ошибка — ' + e.message); }
   } finally {
-    isRunning = false; isPaused = false; isStopped = false;
-    setIcon('inactive');
+    _clearPDFCache();
+    _cleanupAfterDownload();
   }
 }
 
@@ -2416,6 +2557,10 @@ async function generatePDFYandex(overrideFrom = null, overrideTo = null) {
   throttle.configure(cfg.delayMs, cfg.adaptiveSpeed);
   throttle.reset();
   setIcon('active');
+
+  const pdfSession = createPDFStreamSession(cur => {
+    if (cur % 10 === 0) sendStatus(`PDF/Яндекс: загружено ${cur} стр…`);
+  });
 
   try {
     sendStatus('Яндекс Архив: определение числа страниц…');
@@ -2436,7 +2581,6 @@ async function generatePDFYandex(overrideFrom = null, overrideTo = null) {
     }
 
     const filename   = `${sanitizeForFilename(titleRaw)}_${docId}.pdf`;
-    const pagesData  = [];
     const failedNums = new Set();
 
     for (let p = from; p <= to; p++) {
@@ -2451,12 +2595,12 @@ async function generatePDFYandex(overrideFrom = null, overrideTo = null) {
             if (navigateYandexToPage(p)) await sleep(800);
           }
           sendStatus(`PDF/Яндекс: ожидание скана стр. ${p}…`);
-          const imageUrl = await waitForYandexPageRender(p, 25000);
+          const imgUrl = await waitForYandexPageRender(p, 25000);
 
-          if (imageUrl.startsWith('data:')) {
-            bytes = dataUrlToBytes(imageUrl);
+          if (imgUrl.startsWith('data:')) {
+            bytes = dataUrlToBytes(imgUrl);
           } else {
-            const res = await fetch(imageUrl, { credentials: 'include' });
+            const res = await fetch(imgUrl, { credentials: 'include' });
             if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
             else throw new Error(`HTTP ${res.status}`);
           }
@@ -2477,111 +2621,318 @@ async function generatePDFYandex(overrideFrom = null, overrideTo = null) {
         }
       }
 
-      if (bytes) pagesData.push({ bytes, ...parseJpegHeader(bytes) });
+      if (bytes) {
+        const { w, h, cs } = parseJpegHeader(bytes);
+        if (w > 0 && h > 0) pdfSession.addPage(bytes, w, h, cs);
+        else log('parseJpegHeader: skipping page with invalid dimensions');
+      }
       await sleep(Math.max(throttle.delay, 400));
     }
 
-    if (!pagesData.length) { sendDone('PDF/Яндекс: нет данных для сборки'); return; }
+    if (pdfSession.pageCount === 0) { sendDone('PDF/Яндекс: нет данных для сборки'); return; }
 
-    sendStatus(`PDF: сборка ${pagesData.length} страниц…`);
-    const pdfBytes = await buildPDFViaWorker(pagesData, (c,t) => sendStatus(`PDF: ${c}/${t} стр…`));
+    sendStatus(`PDF: сборка ${pdfSession.pageCount} страниц…`);
+    const pdfBytes = await pdfSession.finish();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = filename; a.style.display = 'none';
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
-    imgCacheClear(docId).catch(() => {});
+    _pdfCacheUnit = docId; imgCacheClear(docId).catch(() => {});
 
     const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
-    sendDone(`PDF готов: ${pagesData.length} стр.${failNote}`,
+    sendDone(`PDF готов: ${pdfSession.pageCount} стр.${failNote}`,
       { isPDF: true, failedCount: failedNums.size });
 
     saveHistory({ unit: docId, title: titleRaw || `Документ ${docId}`,
-      pages: pagesData.length, timestamp: Date.now(), url: location.href, format: 'pdf' });
+      pages: pdfSession.pageCount, timestamp: Date.now(), url: location.href, format: 'pdf' });
 
   } catch (e) {
+    pdfSession.abort();
     if (e.message === 'stopped') sendDone('PDF: остановлено');
     else { console.error('[RAD] generatePDFYandex:', e); sendDone('PDF: ошибка — ' + e.message); }
   } finally {
-    isRunning = false; isPaused = false; isStopped = false;
-    setIcon('inactive');
+    _clearPDFCache();
+    _cleanupAfterDownload();
   }
 }
 
-// ── Генерация PDF — ЦГА Москвы ───────────────────────────────────────────────
+// ── Генерация PDF — ЦГА Москвы (ЭЛАР-вьювер) ─────────────────────────────────
 
 async function generatePDFCgamosArsvo(guid, unitId, overrideFrom, overrideTo) {
   const cfg = await ensureSettings();
 
-  sendStatus('ЦГА Москвы: определение количества страниц…');
-  const totalPages = await findTotalPagesARSVO(guid, cfg.maxPages, t => sendStatus(`ЦГА: ${t}`));
-  if (!totalPages) { sendDone('PDF/ЦГА: страницы не найдены'); return; }
-
-  const titleRaw = getTitleFromPage();
-  const filename  = `${sanitizeForFilename(titleRaw)}_${unitId}.pdf`;
-  const from  = overrideFrom ?? 1;
-  const to    = overrideTo   != null ? Math.min(overrideTo, totalPages) : totalPages;
-  const total = to - from + 1;
-
-  if (total > PDF_PAGE_HARD_LIMIT) {
-    sendDone(`PDF: слишком много страниц (${total}). Максимум ${PDF_PAGE_HARD_LIMIT}.`);
-    return;
-  }
-
-  const pagesData  = [];
-  const failedNums = new Set();
-
-  for (let p = from; p <= to; p++) {
-    await waitIfPaused();
-    sendProgress(p - from + 1, total);
-    sendStatus(`PDF/ЦГА: страница ${p} / ${totalPages}`);
-
-    let bytes = await imgCacheGet(unitId, p);
-    if (!bytes) {
-      if (isElarSingleTileMode()) {
-        try {
-          const res = await fetch(elarSingleTileUrl(guid, p - 1));
-          if (res.ok) {
-            bytes = new Uint8Array(await res.arrayBuffer());
-            imgCachePut(unitId, p, bytes);
-            throttle.onSuccess();
-          } else { throttle.onRateLimit(res.status); failedNums.add(p); }
-        } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
-      } else {
-        try {
-          const res = await fetch(arsvoImageUrl(guid, p - 1));
-          if (res.ok) {
-            bytes = new Uint8Array(await res.arrayBuffer());
-            imgCachePut(unitId, p, bytes);
-            throttle.onSuccess();
-          } else { throttle.onRateLimit(res.status); failedNums.add(p); }
-        } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
-      }
-    }
-    if (bytes) pagesData.push({ bytes, ...parseJpegHeader(bytes) });
-    await sleep(throttle.delay);
-  }
-
-  if (!pagesData.length) { sendDone('PDF/ЦГА: нет данных для сборки'); return; }
-
-  sendStatus(`PDF: сборка ${pagesData.length} страниц через Worker…`);
-  const pdfBytes = await buildPDFViaWorker(pagesData, (cur, tot) => {
-    sendStatus(`PDF: сборка ${cur} / ${tot} страниц…`);
+  const pdfSession = createPDFStreamSession(cur => {
+    if (cur % 10 === 0) sendStatus(`PDF/ЦГА: загружено ${cur} стр…`);
   });
-  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = filename; a.style.display = 'none';
-  document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
-  imgCacheClear(unitId).catch(() => {});
 
-  const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
-  sendDone(`PDF готов: ${pagesData.length} стр.${failNote}`,
-    { isPDF: true, failedCount: failedNums.size });
-  saveHistory({ unit: unitId, title: titleRaw || `Документ ${unitId}`,
-    pages: pagesData.length, timestamp: Date.now(), url: location.href, format: 'pdf' });
+  try {
+    sendStatus('ЦГА Москвы: определение количества страниц…');
+    const totalPages = await findTotalPagesARSVO(guid, cfg.maxPages, t => sendStatus(`ЦГА: ${t}`));
+    if (!totalPages) { sendDone('PDF/ЦГА: страницы не найдены'); return; }
+
+    const titleRaw = getTitleFromPage();
+    const filename  = `${sanitizeForFilename(titleRaw)}_${unitId}.pdf`;
+    const from  = overrideFrom ?? 1;
+    const to    = overrideTo   != null ? Math.min(overrideTo, totalPages) : totalPages;
+    const total = to - from + 1;
+
+    if (total > PDF_PAGE_HARD_LIMIT) {
+      sendDone(`PDF: слишком много страниц (${total}). Максимум ${PDF_PAGE_HARD_LIMIT}.`);
+      return;
+    }
+
+    const failedNums = new Set();
+
+    for (let p = from; p <= to; p++) {
+      await waitIfPaused();
+      sendProgress(p - from + 1, total);
+      sendStatus(`PDF/ЦГА: страница ${p} / ${totalPages}`);
+
+      let bytes = await imgCacheGet(unitId, p);
+      if (!bytes) {
+        if (isElarSingleTileMode()) {
+          try {
+            const res = await fetch(elarSingleTileUrl(guid, p - 1));
+            if (res.ok) {
+              bytes = new Uint8Array(await res.arrayBuffer());
+              imgCachePut(unitId, p, bytes);
+              throttle.onSuccess();
+            } else { throttle.onRateLimit(res.status); failedNums.add(p); }
+          } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
+        } else {
+          try {
+            const res = await fetch(arsvoImageUrl(guid, p - 1));
+            if (res.ok) {
+              bytes = new Uint8Array(await res.arrayBuffer());
+              imgCachePut(unitId, p, bytes);
+              throttle.onSuccess();
+            } else { throttle.onRateLimit(res.status); failedNums.add(p); }
+          } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
+        }
+      }
+
+      if (bytes) {
+        const { w, h, cs } = parseJpegHeader(bytes);
+        if (w > 0 && h > 0) pdfSession.addPage(bytes, w, h, cs);
+        else log('parseJpegHeader: skipping page with invalid dimensions');
+      }
+      await sleep(throttle.delay);
+    }
+
+    if (pdfSession.pageCount === 0) { sendDone('PDF/ЦГА: нет данных для сборки'); return; }
+
+    sendStatus(`PDF: сборка ${pdfSession.pageCount} страниц…`);
+    const pdfBytes = await pdfSession.finish();
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
+    _pdfCacheUnit = unitId; imgCacheClear(unitId).catch(() => {});
+
+    const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
+    sendDone(`PDF готов: ${pdfSession.pageCount} стр.${failNote}`,
+      { isPDF: true, failedCount: failedNums.size });
+    saveHistory({ unit: unitId, title: titleRaw || `Документ ${unitId}`,
+      pages: pdfSession.pageCount, timestamp: Date.now(), url: location.href, format: 'pdf' });
+
+  } catch (e) {
+    pdfSession.abort();
+    if (e.message === 'stopped') sendDone('PDF: остановлено');
+    else { console.error('[RAD] generatePDFCgamosArsvo:', e); sendDone('PDF: ошибка — ' + e.message); }
+  }
+}
+
+async function downloadAllCgamosSpa(overrideFrom = null, overrideTo = null) {
+  if (isRunning) return;
+  isRunning = true; isPaused = false; isStopped = false;
+
+  const cfg      = await ensureSettings();
+  const docId    = getCgamosDocId();
+  const titleRaw = getTitleFromPage();
+  const folderName = `${sanitizeForFilename(titleRaw || 'cgamos_spa')}_${docId}`;
+
+  throttle.configure(cfg.delayMs, cfg.adaptiveSpeed);
+  throttle.reset();
+  dlSemaphore.setLimit(1); // SPA — только последовательно
+  setIcon('active');
+
+  try {
+    sendStatus('ЦГА Москвы SPA: определение числа страниц…');
+    const totalDetected = getCgamosSpaTotal();
+
+    if (!totalDetected) {
+      sendDone('ЦГА Москвы: не удалось определить число страниц. Откройте документ и повторите.');
+      return;
+    }
+
+    const from  = Math.max(1, overrideFrom ?? 1);
+    const to    = Math.min(totalDetected, overrideTo ?? totalDetected);
+    const total = to - from + 1;
+    const padWidth = String(totalDetected).length || 3;
+    const failedPages = [];
+
+    sendStatus(cfg.createFolders ? `Папка: ${folderName}` : 'Файлы в корне загрузок');
+    if (cfg.createFolders) {
+      downloadMetadata(folderName, docId, totalDetected, titleRaw, null).catch(() => {});
+    }
+
+    for (let p = from; p <= to; p++) {
+      await waitIfPaused();
+      sendProgress(p - from + 1, total);
+      sendStatus(`ЦГА Москвы SPA: переход к стр. ${p} / ${to}…`);
+
+      try {
+        if (getCgamosSpaCurrent() !== p) {
+          if (!goToCgamosPage(p)) {
+            sendStatus(`ЦГА Москвы SPA: пагинатор не найден (стр. ${p})`);
+            failedPages.push(p);
+            continue;
+          }
+          await sleep(600);
+        }
+
+        sendStatus(`ЦГА Москвы SPA: ожидание скана стр. ${p}…`);
+        const dataUrl = await waitForCgamosSpaRender(p, 25000);
+
+        const filename = cfg.createFolders
+          ? `${folderName}/${pad(p, padWidth)}.jpg`
+          : `cgamos_${docId}_p${pad(p, padWidth)}.jpg`;
+
+        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+        throttle.onSuccess();
+      } catch (e) {
+        if (e.message === 'stopped') throw e;
+        log('CgamosSpa page error p' + p, e);
+        sendStatus(`ЦГА Москвы SPA: ошибка стр. ${p} — ${e.message}`);
+        if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+        failedPages.push(p);
+      }
+
+      await sleep(Math.max(throttle.delay, 500));
+    }
+
+    if (cfg.createFolders && failedPages.length > 0) downloadErrorLog(folderName, failedPages);
+
+    const failedNote = failedPages.length ? ` (пропущено: ${failedPages.length})` : '';
+    sendDone(`Готово: ${total - failedPages.length} стр.${failedNote}`, { failedCount: failedPages.length });
+
+    saveHistory({ unit: docId, title: titleRaw || `Документ ${docId}`,
+      pages: total - failedPages.length, timestamp: Date.now(), url: location.href, format: 'jpg' });
+
+  } catch (e) {
+    if (e.message === 'stopped') sendDone('Остановлено');
+    else { console.error('[RAD] downloadAllCgamosSpa:', e); sendDone('Ошибка: ' + e.message); }
+  } finally {
+    _clearPDFCache();
+    _cleanupAfterDownload();
+  }
+}
+
+async function generatePDFCgamosSpa(overrideFrom = null, overrideTo = null) {
+  if (isRunning) return;
+  isRunning = true; isPaused = false; isStopped = false;
+
+  const cfg    = await ensureSettings();
+  const docId  = getCgamosDocId();
+  const titleRaw = getTitleFromPage();
+
+  throttle.configure(cfg.delayMs, cfg.adaptiveSpeed);
+  throttle.reset();
+  setIcon('active');
+
+  const pdfSession = createPDFStreamSession(cur => {
+    if (cur % 10 === 0) sendStatus(`PDF/ЦГА SPA: загружено ${cur} стр…`);
+  });
+
+  try {
+    sendStatus('PDF/ЦГА Москвы SPA: определение числа страниц…');
+    const totalDetected = getCgamosSpaTotal();
+
+    if (!totalDetected) {
+      sendDone('PDF/ЦГА Москвы: не удалось определить число страниц. Откройте документ и повторите.');
+      return;
+    }
+
+    const from  = Math.max(1, overrideFrom ?? 1);
+    const to    = Math.min(totalDetected, overrideTo ?? totalDetected);
+    const total = to - from + 1;
+
+    if (total > PDF_PAGE_HARD_LIMIT) {
+      sendDone(`PDF: слишком много страниц (${total}). Максимум ${PDF_PAGE_HARD_LIMIT}.`);
+      return;
+    }
+
+    const filename   = `${sanitizeForFilename(titleRaw)}_${docId}.pdf`;
+    const failedNums = new Set();
+
+    for (let p = from; p <= to; p++) {
+      await waitIfPaused();
+      sendProgress(p - from + 1, total);
+      sendStatus(`PDF/ЦГА SPA: переход к стр. ${p} / ${to}…`);
+
+      let bytes = await imgCacheGet(docId, p);
+      if (!bytes) {
+        try {
+          if (getCgamosSpaCurrent() !== p) {
+            if (!goToCgamosPage(p)) {
+              failedNums.add(p);
+              continue;
+            }
+            await sleep(600);
+          }
+          sendStatus(`PDF/ЦГА SPA: ожидание скана стр. ${p}…`);
+          const dataUrl = await waitForCgamosSpaRender(p, 25000);
+          bytes = dataUrlToBytes(dataUrl);
+          imgCachePut(docId, p, bytes);
+          throttle.onSuccess();
+        } catch (e) {
+          if (e.message === 'stopped') throw e;
+          log('PDF/CgamosSpa error p' + p, e);
+          sendStatus(`PDF/ЦГА SPA: пропуск стр. ${p} — ${e.message}`);
+          throttle.onRateLimit(0);
+          failedNums.add(p);
+        }
+      }
+
+      if (bytes) {
+        const { w, h, cs } = parseJpegHeader(bytes);
+        if (w > 0 && h > 0) pdfSession.addPage(bytes, w, h, cs);
+        else log('parseJpegHeader: skipping page with invalid dimensions');
+      }
+      await sleep(Math.max(throttle.delay, 500));
+    }
+
+    if (pdfSession.pageCount === 0) { sendDone('PDF/ЦГА SPA: нет данных для сборки'); return; }
+
+    sendStatus(`PDF: сборка ${pdfSession.pageCount} страниц…`);
+    const pdfBytes = await pdfSession.finish();
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60_000);
+    _pdfCacheUnit = docId; imgCacheClear(docId).catch(() => {});
+
+    const failNote = failedNums.size ? ` (пропущено: ${failedNums.size})` : '';
+    sendDone(`PDF готов: ${pdfSession.pageCount} стр.${failNote}`,
+      { isPDF: true, failedCount: failedNums.size });
+
+    saveHistory({ unit: docId, title: titleRaw || `Документ ${docId}`,
+      pages: pdfSession.pageCount, timestamp: Date.now(), url: location.href, format: 'pdf' });
+
+  } catch (e) {
+    pdfSession.abort();
+    if (e.message === 'stopped') sendDone('PDF: остановлено');
+    else { console.error('[RAD] generatePDFCgamosSpa:', e); sendDone('PDF: ошибка — ' + e.message); }
+  } finally {
+    _clearPDFCache();
+    _cleanupAfterDownload();
+  }
 }
 
 // ── Скачать весь документ ────────────────────────────────────────────────────
@@ -2619,6 +2970,7 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
         isResuming = true;
         pFrom      = saved.lastPage + 1;
         total      = saved.totalPages;
+        if (overrideTo != null) total = Math.min(overrideTo, total);
         const ageMin = Math.round((Date.now() - (saved.savedAt ?? 0)) / 60000);
         sendStatus(`Продолжение с стр. ${pFrom} / ${total} (${ageMin} мин. назад)…`);
         await sleep(1200);
@@ -2649,8 +3001,6 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
 
     const padWidth    = String(total).length || 3;
     const failedPages = [];
-    // Зондирование каждые 20 страниц остаётся как запасной механизм для
-    // получения точного HTTP-статуса (нужен для корректного throttle.onRateLimit)
     const PROBE_EVERY = 20;
 
     for (let p = pFrom; p <= total; p++) {
@@ -2698,6 +3048,7 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
     if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAll:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
+    _clearPDFCache();
     _cleanupAfterDownload();
   }
 }
@@ -2821,6 +3172,7 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
     if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAllVRR:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
+    _clearPDFCache();
     _cleanupAfterDownload();
   }
 }
@@ -2942,6 +3294,7 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
     if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAllЭЛАР:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
+    _clearPDFCache();
     _cleanupAfterDownload();
   }
 }
@@ -3091,6 +3444,7 @@ async function downloadAllYandex(overrideFrom = null, overrideTo = null) {
     if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAllYandex:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
+    _clearPDFCache();
     _cleanupAfterDownload();
   }
 }
@@ -3216,6 +3570,7 @@ async function downloadAllCgamos(overrideFrom = null, overrideTo = null) {
     if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAllCgamos:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
+    _clearPDFCache();
     _cleanupAfterDownload();
   }
 }
@@ -3476,6 +3831,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // ── Инициализация ─────────────────────────────────────────────────────────────
 
 ensureSettings().then(async () => {
+  sweepOldResumeStates().catch(() => {});
+
   try {
     const adapter = getAdapterInfo();
     if (adapter) {

@@ -12,9 +12,34 @@ const ICONS_INACTIVE = {
   '128': 'icons/icon128_inactive.png'
 };
 
-const pendingDownloads = new Map();
+
+const PENDING_DOWNLOAD_TTL_MS = 2 * 60 * 60 * 1000;
+const pendingDownloads = new Map(); // downloadId → { tabId, savedAt }
 
 function suppressLastError() { void chrome.runtime.lastError; }
+
+// ── Периодическая очистка устаревших записей ──────────────────────────────────
+
+function sweepPendingDownloads() {
+  const now = Date.now();
+  for (const [id, entry] of pendingDownloads) {
+    if (now - entry.savedAt > PENDING_DOWNLOAD_TTL_MS) {
+      pendingDownloads.delete(id);
+    }
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.get('sweepPendingDownloads', existing => {
+    if (!existing) {
+      chrome.alarms.create('sweepPendingDownloads', { periodInMinutes: 30 });
+    }
+  });
+});
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === 'sweepPendingDownloads') sweepPendingDownloads();
+});
 
 // ── Бейдж на иконке ───────────────────────────────────────────────────────────
 
@@ -26,7 +51,8 @@ function setBadge(text, color) {
 // ── Уведомления ───────────────────────────────────────────────────────────────
 
 function showNotification(title, message) {
-  chrome.notifications.create('rad_done_' + Date.now(), {
+  const notifId = 'rad_done_' + (crypto.randomUUID?.() ?? Date.now());
+  chrome.notifications.create(notifId, {
     type: 'basic', iconUrl: 'icons/icon128.png',
     title, message, priority: 1
   }, suppressLastError);
@@ -47,7 +73,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
         if (downloadId != null && sender?.tab?.id != null) {
-          pendingDownloads.set(downloadId, sender.tab.id);
+          pendingDownloads.set(downloadId, { tabId: sender.tab.id, savedAt: Date.now() });
         }
         sendResponse({ downloadId: downloadId ?? null });
       }
@@ -94,8 +120,14 @@ chrome.downloads.onChanged.addListener((delta) => {
   if (!delta.state) return;
   const { current } = delta.state;
   if (current !== 'complete' && current !== 'interrupted') return;
-  const tabId = pendingDownloads.get(delta.id);
-  if (tabId == null) return;
+
+  const entry = pendingDownloads.get(delta.id);
+  if (entry == null) return;
   pendingDownloads.delete(delta.id);
-  chrome.tabs.sendMessage(tabId, { type: 'DOWNLOAD_DONE', downloadId: delta.id, success: current === 'complete' }, suppressLastError);
+
+  chrome.tabs.sendMessage(
+    entry.tabId,
+    { type: 'DOWNLOAD_DONE', downloadId: delta.id, success: current === 'complete' },
+    suppressLastError
+  );
 });

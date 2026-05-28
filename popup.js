@@ -320,7 +320,11 @@ function loadRangePref(unit) {
     const pref = data[`rad_range_${unit}`];
     if (!pref) return;
     const ageMs = Date.now() - (pref.savedAt || 0);
-    if (ageMs > 7 * 24 * 60 * 60 * 1000) return; // Ignore if older than 7 days
+    const TTL   = 7 * 24 * 60 * 60 * 1000; // 7 дней
+    if (ageMs > TTL) {
+      chrome.storage.local.remove(`rad_range_${unit}`);
+      return;
+    }
     fromPage = pref.from ?? 1;
     toPage   = pref.to   ?? null;
     updateRangeUI();
@@ -374,6 +378,7 @@ function completeProgressBar() {
 
 function setRunningUI(running, paused) {
   isRunning = running; isPaused = paused;
+  document.body.classList.toggle('is-running', running);
 
   btnAll.disabled     = running || !isArchivePage;
   btnCurrent.disabled = running || !isArchivePage;
@@ -455,6 +460,12 @@ function onNotesInput() {
     chrome.storage.local.set({ [notesKey(currentUnit)]: record }, () => {
       if (!chrome.runtime.lastError) flashNotesSaved();
     });
+    chrome.storage.local.get({ rad_notes_index: [] }, d => {
+      const idx = Array.isArray(d.rad_notes_index) ? d.rad_notes_index : [];
+      if (!idx.includes(currentUnit)) {
+        chrome.storage.local.set({ rad_notes_index: [...idx, currentUnit] });
+      }
+    });
   }, 800);
 }
 
@@ -534,7 +545,13 @@ function formatBibTeX(data) {
   const year = isNaN(d) ? new Date().getFullYear() : d.getFullYear();
   const mon  = isNaN(d) ? '' : d.toLocaleString('en', { month: 'long' }).toLowerCase();
   const key  = `yar_${data.unitId || 'unknown'}_${year}`;
-  const bib  = v => String(v ?? '').replace(/[\\{}]/g, m => `\\${m}`);
+  const bib  = v => String(v ?? '')
+    .replace(/\\/g, '\\textbackslash{}')
+    .replace(/[%$_#]/g, m => `\\${m}`)
+    .replace(/\^/g, '\\textasciicircum{}')
+    .replace(/~/g,  '\\textasciitilde{}')
+    .replace(/&/g,  '\\&')
+    .replace(/[{}]/g, m => `\\${m}`);
   const note = Object.entries(data.fields || {}).slice(0, 10).map(([k, v]) => `${k}: ${v}`).join('; ');
   const lines = [
     `@misc{${key},`,
@@ -591,8 +608,12 @@ exportBibTeX.addEventListener('click', () => {
 
 // ── Баннер «заметки чужого дела» ─────────────────────────────────────────────
 
+function safeHref(url) {
+  if (!url || typeof url !== 'string') return null;
+  return /^https?:\/\//i.test(url.trim()) ? url.trim() : null;
+}
+
 function showNotesUnitBanner(selectedUnit, originalUnit) {
-  // Remove any existing banner first
   const existing = document.getElementById('notesBanner');
   if (existing) existing.remove();
 
@@ -602,7 +623,6 @@ function showNotesUnitBanner(selectedUnit, originalUnit) {
   banner.id = 'notesBanner';
   banner.className = 'notes-unit-banner';
 
-  // Try to find the URL for this unit from projects
   chrome.storage.local.get({ rad_projects: [] }, data => {
     const projects = Array.isArray(data.rad_projects) ? data.rad_projects : [];
     let unitUrl = null;
@@ -610,26 +630,48 @@ function showNotesUnitBanner(selectedUnit, originalUnit) {
       if (p.unitUrls?.[selectedUnit]) { unitUrl = p.unitUrls[selectedUnit]; break; }
     }
 
-    const unitRef = unitUrl
-      ? `<a href="${unitUrl}" target="_blank" class="notes-banner-link" title="Открыть документ в новой вкладке">Unit ${selectedUnit} ↗</a>`
-      : `<span class="notes-banner-unit">Unit ${selectedUnit}</span>`;
+    // ── Левая часть: «Заметки к Unit XXXX ↗» ─────────────────────────────
+    const textSpan = document.createElement('span');
+    textSpan.className = 'notes-banner-text';
+    textSpan.textContent = 'Заметки к '; // безопасно: textContent
 
-    banner.innerHTML = `
-      <span class="notes-banner-text">Заметки к ${unitRef}</span>
-      <button class="notes-banner-reset" title="Вернуться к заметкам текущего документа" aria-label="Вернуться">
-        Вернуться ⤶
-      </button>
-    `;
+    const href = safeHref(unitUrl);
+    if (href) {
+      const link = document.createElement('a');
+      link.className = 'notes-banner-link';
+      link.href = href;               // безопасно: прошёл safeHref
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.title = 'Открыть документ в новой вкладке';
+      link.textContent = `Unit ${selectedUnit} ↗`; // безопасно: textContent
+      textSpan.appendChild(link);
+    } else {
+      const unitSpan = document.createElement('span');
+      unitSpan.className = 'notes-banner-unit';
+      unitSpan.textContent = `Unit ${selectedUnit}`; // безопасно: textContent
+      textSpan.appendChild(unitSpan);
+    }
 
-    banner.querySelector('.notes-banner-reset').addEventListener('click', () => {
+    // ── Правая часть: кнопка «Вернуться» ─────────────────────────────────
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'notes-banner-reset';
+    resetBtn.title = 'Вернуться к заметкам текущего документа';
+    resetBtn.setAttribute('aria-label', 'Вернуться');
+    resetBtn.textContent = 'Вернуться ⤶';
+
+    resetBtn.addEventListener('click', () => {
       banner.remove();
-      // Restore notes for the real current document
       currentUnit = originalUnit;
       if (originalUnit) loadNotes(originalUnit);
-      else { notesArea.value = ''; renderNoteTags([]); notesChars.textContent = '0 / 4000'; notesDot.classList.remove('visible'); }
+      else {
+        notesArea.value = '';
+        renderNoteTags([]);
+        notesChars.textContent = '0 / 4000';
+        notesDot.classList.remove('visible');
+      }
     });
 
-    // Insert at top of notesBody
+    banner.append(textSpan, resetBtn);
     notesBody.insertBefore(banner, notesBody.firstChild);
   });
 }
@@ -732,28 +774,81 @@ function renderProjects(projects) {
     const el = document.createElement('div');
     el.className = 'project-item';
 
-    const units = (proj.units || []);
+    const units       = proj.units || [];
     const statusLabel = proj.status === 'done' ? '✓ Готово' : '● В работе';
-    const statusClass = proj.status === 'done' ? '' : 'active';
     const color       = proj.color || '#7FBE00';
 
-    el.innerHTML = `
-      <div class="project-item-head">
-        <span class="project-color-indicator" style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;margin-right:2px"></span>
-        <span class="project-item-name">${proj.name}</span>
-        <button class="project-status ${statusClass}" data-idx="${idx}" title="Переключить статус">${statusLabel}</button>
-        <button class="project-add-unit-btn" data-idx="${idx}" title="Добавить текущий документ">+ дело</button>
-        <button class="project-delete-btn" data-idx="${idx}" title="Удалить проект" aria-label="Удалить">✕</button>
-      </div>
-      ${units.length ? `<div class="project-units">${units.map(u => {
-        const unitUrl = proj.unitUrls?.[u];
-        return unitUrl
-          ? `<a class="project-unit-tag project-unit-link" href="${unitUrl}" title="Открыть документ" target="_blank">${u}</a>`
-          : `<span class="project-unit-tag">${u}</span>`;
-      }).join('')}</div>` : ''}
-    `;
+    // ── Заголовок карточки ────────────────────────────────────────────────
+    const head = document.createElement('div');
+    head.className = 'project-item-head';
 
-    el.querySelector('.project-status').addEventListener('click', e => {
+    // Цветовой индикатор
+    const colorDot = document.createElement('span');
+    colorDot.className = 'project-color-indicator';
+    colorDot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;margin-right:2px`;
+
+    // Название
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'project-item-name';
+    nameSpan.textContent = proj.name; // безопасно: textContent
+
+    // Кнопка статуса
+    const statusBtn = document.createElement('button');
+    statusBtn.className = `project-status${proj.status !== 'done' ? ' active' : ''}`;
+    statusBtn.dataset.idx = idx;
+    statusBtn.title = 'Переключить статус';
+    statusBtn.textContent = statusLabel;
+
+    // Кнопка добавить дело
+    const addUnitBtn = document.createElement('button');
+    addUnitBtn.className = 'project-add-unit-btn';
+    addUnitBtn.dataset.idx = idx;
+    addUnitBtn.title = 'Добавить текущий документ';
+    addUnitBtn.textContent = '+ дело';
+
+    // Кнопка удалить проект
+    const delBtn = document.createElement('button');
+    delBtn.className = 'project-delete-btn';
+    delBtn.dataset.idx = idx;
+    delBtn.title = 'Удалить проект';
+    delBtn.setAttribute('aria-label', 'Удалить');
+    delBtn.textContent = '✕';
+
+    head.append(colorDot, nameSpan, statusBtn, addUnitBtn, delBtn);
+    el.appendChild(head);
+
+    // ── Список дел ────────────────────────────────────────────────────────
+    if (units.length) {
+      const unitsDiv = document.createElement('div');
+      unitsDiv.className = 'project-units';
+
+      units.forEach(u => {
+        const unitStr = String(u);
+        const rawUrl  = proj.unitUrls?.[unitStr];
+        const href    = safeHref(rawUrl);
+
+        if (href) {
+          const link = document.createElement('a');
+          link.className = 'project-unit-tag project-unit-link';
+          link.href = href;           // безопасно: прошёл safeHref
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.title = 'Открыть документ';
+          link.textContent = unitStr; // безопасно: textContent
+          unitsDiv.appendChild(link);
+        } else {
+          const tag = document.createElement('span');
+          tag.className = 'project-unit-tag';
+          tag.textContent = unitStr;  // безопасно: textContent
+          unitsDiv.appendChild(tag);
+        }
+      });
+
+      el.appendChild(unitsDiv);
+    }
+
+    // ── Обработчики ───────────────────────────────────────────────────────
+    statusBtn.addEventListener('click', e => {
       const i = parseInt(e.currentTarget.dataset.idx);
       loadProjects(ps => {
         ps[i].status = ps[i].status === 'done' ? 'active' : 'done';
@@ -761,7 +856,7 @@ function renderProjects(projects) {
       });
     });
 
-    el.querySelector('.project-add-unit-btn').addEventListener('click', e => {
+    addUnitBtn.addEventListener('click', e => {
       const i = parseInt(e.currentTarget.dataset.idx);
       if (!currentUnit) { showToast('Откройте документ в архиве', 2000); return; }
       loadProjects(ps => {
@@ -769,7 +864,6 @@ function renderProjects(projects) {
         if (!ps[i].units.includes(currentUnit)) {
           if (!ps[i].unitUrls) ps[i].unitUrls = {};
           ps[i].units.push(currentUnit);
-          // Store current tab URL so unit tag becomes clickable
           chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
             if (tabs?.[0]?.url) ps[i].unitUrls[currentUnit] = tabs[0].url;
             saveProjects(ps, () => { renderProjects(ps); showToast('Документ добавлен в проект', 1800); });
@@ -780,7 +874,7 @@ function renderProjects(projects) {
       });
     });
 
-    el.querySelector('.project-delete-btn').addEventListener('click', e => {
+    delBtn.addEventListener('click', e => {
       const i = parseInt(e.currentTarget.dataset.idx);
       loadProjects(ps => {
         ps.splice(i, 1);
@@ -811,7 +905,7 @@ if (btnProjectAdd) {
 // ── Расширенная история ────────────────────────────
 
 function computeHistoryStats(entries) {
-  const totalPages    = entries.reduce((s, e) => s + (e.pages || 0), 0);
+  const totalPages = entries.reduce((s, e) => s + (e.pages || 0), 0);
   const archiveCounts = {};
   entries.forEach(e => {
     const host = (() => { try { return new URL(e.url || '').hostname; } catch { return '?'; } })();
@@ -820,15 +914,33 @@ function computeHistoryStats(entries) {
   const topArchive = Object.entries(archiveCounts).sort((a,b) => b[1]-a[1])[0];
 
   if (!historyStats) return;
-  historyStats.innerHTML = `
-    <div class="history-stat-row">
-      <span>Всего загрузок</span><span class="history-stat-val">${entries.length}</span>
-    </div>
-    <div class="history-stat-row">
-      <span>Страниц скачано</span><span class="history-stat-val">${totalPages.toLocaleString('ru-RU')}</span>
-    </div>
-    ${topArchive ? `<div class="history-stat-row"><span>Любимый архив</span><span class="history-stat-val" title="${topArchive[0]}">${topArchive[0].replace('www.', '').slice(0, 22)}</span></div>` : ''}
-  `;
+  historyStats.textContent = '';
+
+  const rows = [
+    ['Всего загрузок',    String(entries.length)],
+    ['Страниц скачано',   totalPages.toLocaleString('ru-RU')],
+  ];
+  if (topArchive) {
+    rows.push(['Любимый архив', topArchive[0].replace('www.', '').slice(0, 22)]);
+  }
+
+  rows.forEach(([label, value]) => {
+    const row = document.createElement('div');
+    row.className = 'history-stat-row';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = label;
+
+    const valSpan = document.createElement('span');
+    valSpan.className = 'history-stat-val';
+    valSpan.textContent = value;
+    if (topArchive && label === 'Любимый архив') {
+      valSpan.title = topArchive[0]; // безопасно: .title не HTML
+    }
+
+    row.append(labelSpan, valSpan);
+    historyStats.appendChild(row);
+  });
 }
 
 function exportHistoryCSV(entries) {
@@ -864,40 +976,70 @@ function relativeTime(ts) {
 }
 
 function renderHistory(entries) {
+  const RENDER_LIMIT = 50;
   historyCount.textContent = entries.length;
-  historyList.querySelectorAll('.history-item').forEach(el => el.remove());
+  historyList.querySelectorAll('.history-item, .history-truncated-note').forEach(el => el.remove());
 
   if (!entries.length) { historyEmpty.style.display = 'block'; return; }
   historyEmpty.style.display = 'none';
 
-  entries.slice(0, 50).forEach(entry => {
-    const item  = document.createElement('div');
+  entries.slice(0, RENDER_LIMIT).forEach(entry => {
+    const item = document.createElement('div');
     item.className = 'history-item';
     item.setAttribute('role', 'listitem');
 
-    const fmt   = (entry.format || 'jpg').toLowerCase();
+    const fmt   = /^[a-z]+$/.test((entry.format || 'jpg').toLowerCase())
+      ? (entry.format || 'jpg').toLowerCase()
+      : 'jpg'; // защита от произвольных значений в CSS-классе
     const title = entry.title || `Документ ${entry.unit}`;
     const time  = relativeTime(entry.savedAt || entry.timestamp || 0);
     const pages = entry.pages ? `${entry.pages} стр.` : '';
 
-    item.innerHTML = `
-      <span class="history-fmt ${fmt}">${fmt.toUpperCase()}</span>
-      <div class="history-info">
-        <div class="history-title" title="${title.replace(/"/g, '&quot;')}">${title}</div>
-        <div class="history-meta">${[pages, time].filter(Boolean).join(' · ')}</div>
-      </div>
-      <button class="history-open" title="Открыть документ в новой вкладке" aria-label="Открыть документ">↗</button>
-    `;
+    // Бейдж формата
+    const fmtBadge = document.createElement('span');
+    fmtBadge.className = `history-fmt ${fmt}`;
+    fmtBadge.textContent = fmt.toUpperCase(); // безопасно: textContent
 
-    const openBtn = item.querySelector('.history-open');
-    if (entry.url) {
+    // Блок инфо
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'history-info';
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'history-title';
+    titleDiv.title = title;             // безопасно: .title — не HTML
+    titleDiv.textContent = title;       // безопасно: textContent
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'history-meta';
+    metaDiv.textContent = [pages, time].filter(Boolean).join(' · '); // безопасно
+
+    infoDiv.append(titleDiv, metaDiv);
+
+    // Кнопка «открыть»
+    const openBtn = document.createElement('button');
+    openBtn.className = 'history-open';
+    openBtn.title = 'Открыть документ в новой вкладке';
+    openBtn.setAttribute('aria-label', 'Открыть документ');
+    openBtn.textContent = '↗';
+
+    if (entry.url && safeHref(entry.url)) {
       openBtn.addEventListener('click', () => chrome.tabs.create({ url: entry.url }));
     } else {
-      openBtn.disabled = true; openBtn.style.opacity = '0.3';
+      openBtn.disabled = true;
+      openBtn.style.opacity = '0.3';
     }
 
+    item.append(fmtBadge, infoDiv, openBtn);
     historyList.appendChild(item);
   });
+
+  if (entries.length > RENDER_LIMIT) {
+    const note = document.createElement('div');
+    note.className = 'history-truncated-note';
+    note.style.cssText = 'font-size:11px;color:var(--text-muted);text-align:center;padding:8px 0 2px;';
+    note.textContent = `Показаны последние ${RENDER_LIMIT} из ${entries.length} загрузок`;
+    historyList.appendChild(note);
+  }
 }
 
 function loadHistory() {
