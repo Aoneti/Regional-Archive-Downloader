@@ -1408,7 +1408,29 @@ function isKaisaPage() {
   );
 }
 
+// ImageViewer (AltSoft) кладёт в DOM только текущую страницу, а URL всех страниц
+// держит в обфусцированном массиве среди массивов-приманок со случайными именами.
+// Настоящий массив — тот, что подставляется в `img.src = hostPath + '/image?url=' + X[pageNum - 1]`.
+function getKaisaScriptImageUrls() {
+  for (const s of document.querySelectorAll('script:not([src])')) {
+    const code = s.textContent || '';
+    const ref = code.match(/\/image\?url='\s*\+\s*([A-Za-z_$][\w$]*)\s*\[/);
+    if (!ref) continue;
+    const arr = code.match(new RegExp(`var\\s+${ref[1].replace(/\$/g, '\\$')}\\s*=\\s*\\[([^\\]]*)\\]`));
+    if (!arr) continue;
+    const tokens = [...arr[1].matchAll(/'([^']*)'|"([^"]*)"/g)].map(m => m[1] ?? m[2]);
+    if (!tokens.length) continue;
+    const ctx = (code.match(/var\s+contextPath\s*=\s*["']([^"']*)["']/) || [])[1] ?? '';
+    const base = ctx && ctx !== '/' ? ctx : '';
+    return tokens.map(t => `${base}/private/imageViewer/image?url=${t}`);
+  }
+  return [];
+}
+
 function getKaisaImageUrls() {
+  const fromScript = getKaisaScriptImageUrls();
+  if (fromScript.length) return fromScript;
+
   const seen = new Set();
   const result = [];
 
@@ -1449,6 +1471,8 @@ function getKaisaCurrentPage() {
     const m = (title.textContent || '').match(/(\d+)\s+из\s+(\d+)/);
     if (m) return parseInt(m[1], 10);
   }
+  const tf = parseInt(document.getElementById('tfPage')?.value, 10);
+  if (tf > 0) return tf;
   return 1;
 }
 
@@ -1585,7 +1609,8 @@ async function generatePDFKaisa(overrideFrom = null, overrideTo = null) {
           const rawUrl = imgUrls[i];
           const absUrl = rawUrl.startsWith('http') ? rawUrl : `${location.origin}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
           const res = await fetch(absUrl);
-          if (res.ok) {
+          // Без проверки типа HTML-заглушка (лимит просмотров/капча) уйдёт в PDF как страница
+          if (res.ok && /^image\//i.test(res.headers.get('content-type') || '')) {
             bytes = new Uint8Array(await res.arrayBuffer());
             imgCachePut(docId, pageNum, bytes);
             throttle.onSuccess();
