@@ -1408,7 +1408,29 @@ function isKaisaPage() {
   );
 }
 
+// ImageViewer (AltSoft) кладёт в DOM только текущую страницу, а URL всех страниц
+// держит в обфусцированном массиве среди массивов-приманок со случайными именами.
+// Настоящий массив — тот, что подставляется в `img.src = hostPath + '/image?url=' + X[pageNum - 1]`.
+function getKaisaScriptImageUrls() {
+  for (const s of document.querySelectorAll('script:not([src])')) {
+    const code = s.textContent || '';
+    const ref = code.match(/\/image\?url='\s*\+\s*([A-Za-z_$][\w$]*)\s*\[/);
+    if (!ref) continue;
+    const arr = code.match(new RegExp(`var\\s+${ref[1].replace(/\$/g, '\\$')}\\s*=\\s*\\[([^\\]]*)\\]`));
+    if (!arr) continue;
+    const tokens = [...arr[1].matchAll(/'([^']*)'|"([^"]*)"/g)].map(m => m[1] ?? m[2]);
+    if (!tokens.length) continue;
+    const ctx = (code.match(/var\s+contextPath\s*=\s*["']([^"']*)["']/) || [])[1] ?? '';
+    const base = ctx && ctx !== '/' ? ctx : '';
+    return tokens.map(t => `${base}/private/imageViewer/image?url=${t}`);
+  }
+  return [];
+}
+
 function getKaisaImageUrls() {
+  const fromScript = getKaisaScriptImageUrls();
+  if (fromScript.length) return fromScript;
+
   const seen = new Set();
   const result = [];
 
@@ -1449,6 +1471,8 @@ function getKaisaCurrentPage() {
     const m = (title.textContent || '').match(/(\d+)\s+из\s+(\d+)/);
     if (m) return parseInt(m[1], 10);
   }
+  const tf = parseInt(document.getElementById('tfPage')?.value, 10);
+  if (tf > 0) return tf;
   return 1;
 }
 
@@ -1459,6 +1483,45 @@ function getKaisaDocId() {
   const parts = location.pathname.split('/').filter(Boolean).reverse();
   for (const p of parts) { if (/^\d+$/.test(p)) return p; }
   return 'doc_' + Date.now();
+}
+
+function kaisaAbsUrl(raw) {
+  return raw.startsWith('http') ? raw : `${location.origin}${raw.startsWith('/') ? '' : '/'}${raw}`;
+}
+
+const KAISA_CAPTCHA_ERROR = 'kaisa-captcha';
+
+// После лимита просмотров ImageViewer отдаёт вместо сканов заглушку, пока не введена капча.
+async function isKaisaCaptchaRequired(absUrl) {
+  if (!/\/image\?url=/.test(absUrl)) return false;
+  try {
+    const res = await fetch(absUrl.replace(/\/image\?url=.*$/, '/checkRequiredCaptcha'));
+    return (await res.text()).trim() === 'true';
+  } catch { return false; }
+}
+
+// JPEG-байты страницы или null. Бросает KAISA_CAPTCHA_ERROR: дальше все страницы
+// будут заглушками, продолжать бессмысленно.
+async function fetchKaisaPageBytes(absUrl) {
+  const res = await fetch(absUrl);
+  const bytes = res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+  if (bytes && bytes[0] === 0xFF && bytes[1] === 0xD8) return bytes;
+  if (await isKaisaCaptchaRequired(absUrl)) throw new Error(KAISA_CAPTCHA_ERROR);
+  log(`КАИСА: не JPEG (HTTP ${res.status}) — ${absUrl}`);
+  return null;
+}
+
+function kaisaCaptchaMessage(nextStep) {
+  return `Ошибка: сайт требует капчу (лимит просмотров). Введите её в просмотрщике и ${nextStep}`;
+}
+
+function bytesToDataUrl(bytes, type) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(new Blob([bytes], { type }));
+  });
 }
 
 // ── Скачать весь документ — КАИСА ────────────────────────────────────────────
@@ -1492,6 +1555,7 @@ async function downloadAllKaisa(overrideFrom = null, overrideTo = null) {
     const total = to - from + 1;
     const padWidth = String(totalPages).length || 3;
     const failedPages = [];
+    let captchaAt = null;
 
     sendStatus(cfg.createFolders ? `Папка: ${folderName}` : 'Файлы в корне загрузок');
     if (cfg.createFolders) {
@@ -1508,10 +1572,15 @@ async function downloadAllKaisa(overrideFrom = null, overrideTo = null) {
         ? `${folderName}/${pad(pageNum, padWidth)}.jpg`
         : `kaisa_${docId}_p${pad(pageNum, padWidth)}.jpg`;
 
-      const rawUrl = imgUrls[i];
-      const absUrl = rawUrl.startsWith('http') ? rawUrl : `${location.origin}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
-
-      const success = await downloadWithSemaphore(absUrl, filename);
+      // Качаем через fetch, а не URL в chrome.downloads: иначе заглушка капчи сохранится как .jpg
+      let success = false;
+      try {
+        const bytes = await fetchKaisaPageBytes(kaisaAbsUrl(imgUrls[i]));
+        if (bytes) success = await downloadWithSemaphore(await bytesToDataUrl(bytes, 'image/jpeg'), filename);
+      } catch (e) {
+        if (e.message === KAISA_CAPTCHA_ERROR) { captchaAt = pageNum; break; }
+        log('КАИСА error p' + pageNum, e);
+      }
       if (!success) {
         failedPages.push(pageNum);
         if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
@@ -1525,10 +1594,12 @@ async function downloadAllKaisa(overrideFrom = null, overrideTo = null) {
     if (cfg.createFolders && failedPages.length > 0) downloadErrorLog(folderName, failedPages);
 
     const failedNote = failedPages.length ? ` (пропущено: ${failedPages.length})` : '';
-    sendDone(`Готово: ${total - failedPages.length} стр.${failedNote}`, { failedCount: failedPages.length });
+    const saved = (captchaAt ? captchaAt - 1 - from : total) - failedPages.length;
+    if (captchaAt) sendDone(kaisaCaptchaMessage(`запустите снова со стр. ${captchaAt}`), { failedCount: failedPages.length });
+    else sendDone(`Готово: ${saved} стр.${failedNote}`, { failedCount: failedPages.length });
 
-    saveHistory({ unit: docId, title: titleRaw || `Документ ${docId}`,
-      pages: total - failedPages.length, timestamp: Date.now(), url: location.href, format: 'jpg' });
+    if (saved > 0) saveHistory({ unit: docId, title: titleRaw || `Документ ${docId}`,
+      pages: saved, timestamp: Date.now(), url: location.href, format: 'jpg' });
 
   } catch (e) {
     if (e.message === 'stopped') sendDone('Остановлено');
@@ -1582,15 +1653,20 @@ async function generatePDFKaisa(overrideFrom = null, overrideTo = null) {
       let bytes = await imgCacheGet(docId, pageNum);
       if (!bytes) {
         try {
-          const rawUrl = imgUrls[i];
-          const absUrl = rawUrl.startsWith('http') ? rawUrl : `${location.origin}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
-          const res = await fetch(absUrl);
-          if (res.ok) {
-            bytes = new Uint8Array(await res.arrayBuffer());
+          bytes = await fetchKaisaPageBytes(kaisaAbsUrl(imgUrls[i]));
+          if (bytes) {
             imgCachePut(docId, pageNum, bytes);
             throttle.onSuccess();
-          } else { throttle.onRateLimit(res.status); failedNums.add(pageNum); }
-        } catch (e) { log('PDF/КАИСА error p' + pageNum, e); failedNums.add(pageNum); }
+          } else { throttle.onRateLimit(0); failedNums.add(pageNum); }
+        } catch (e) {
+          if (e.message === KAISA_CAPTCHA_ERROR) {
+            // Кэш не чистим (_pdfCacheUnit не выставлен): повторная сборка возьмёт готовые страницы из него
+            sendDone(kaisaCaptchaMessage('соберите PDF снова — готовые страницы возьмутся из кэша'));
+            pdfSession.abort();
+            return;
+          }
+          log('PDF/КАИСА error p' + pageNum, e); failedNums.add(pageNum);
+        }
       }
 
       if (bytes) {
@@ -3654,8 +3730,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(curPage, 3)}.jpg`
       : `kaisa_${adapter.unitId}_p${pad(curPage, 3)}.jpg`;
-    const absUrl = img.startsWith('http') ? img : `${location.origin}${img.startsWith('/') ? '' : '/'}${img}`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: absUrl, filename });
+    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: kaisaAbsUrl(img), filename });
     sendStatus(`КАИСА: скачана стр. ${curPage}`);
 
   } else if (adapter.type === 'cgamos-arsvo') {
@@ -3792,10 +3867,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         previewUrl = arsvoImageUrl(adapter.guid, curPage - 1);
       } else if (adapter?.type === 'kaisa') {
         const imgs = getKaisaImageUrls();
-        if (imgs.length) {
-          const raw = imgs[0];
-          previewUrl = raw.startsWith('http') ? raw : `${location.origin}${raw.startsWith('/') ? '' : '/'}${raw}`;
-        }
+        const raw  = imgs[getKaisaCurrentPage() - 1] || imgs[0];
+        if (raw) previewUrl = kaisaAbsUrl(raw);
       } else if (adapter?.type === 'yandex') {
         const domResult = extractBestImageFromLiveDom();
         if (domResult?.url) previewUrl = domResult.url;
