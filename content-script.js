@@ -90,11 +90,31 @@ function getArchiveImageSuffix() {
     }
   }
 
-  // 2. Fallback: ищем инвертированный просмотр, иначе стандартный вариант.
-  const invImg = document.querySelector('img[src*="/image-inv/"], img[src*="/inage/"]');
+  // 2. Fallback: определяем по URL самой страницы (…/archiveNN/inage/ID — прямая
+  //    ссылка на скан), иначе ищем инвертированный просмотр.
+  const fromHref = detectSuffixFromViewerHref();
+  if (fromHref) {
+    _archiveImageSuffix = fromHref;
+    log('archive image suffix detected from href:', _archiveImageSuffix);
+    return _archiveImageSuffix;
+  }
+  const invImg = document.querySelector('img[src*="/image-inv/"]');
   _archiveImageSuffix = invImg ? 'image-inv' : 'image';
   log('archive image suffix fallback:', _archiveImageSuffix);
   return _archiveImageSuffix;
+}
+
+// Полный src картинки вьювера со сканом страницы (или null). Используется для
+// превью текущей страницы; не кэшируется — картинка меняется при навигации.
+function getViewerImgSrc() {
+  for (const img of document.querySelectorAll('img')) {
+    let src = '';
+    try { src = img.getAttribute('src') || img.currentSrc || img.src || ''; } catch { continue; }
+    if (/\/archive\d+\/[a-z-]+\/\d+\?/i.test(src)) {
+      try { return new URL(src, location.href).href; } catch { return src; }
+    }
+  }
+  return null;
 }
 
 // Все известные суффиксы, начиная с определённого по DOM (для перебора при проверке страниц).
@@ -104,9 +124,9 @@ function archiveImageSuffixCandidates() {
 }
 
 // Определяет реальный суффикс по фактической ссылке на страницу вьювера
-// (в т.ч. по hash-адресу вида /archive27/inage/937?n=2, которого нет в DOM).
+// (в т.ч. по адресу вида /archive27/inage/937 или /archive27/inage/937#2).
 function detectSuffixFromViewerHref() {
-  const m = location.pathname.match(/^\/archive(\d+)\/([a-z-]+)\/(\d+)$/i);
+  const m = location.pathname.match(/^\/archive(\d+)\/([a-z-]+)\/(\d+)\/?$/i);
   if (m && ARCHIVE_IMG_SUFFIXES.includes(m[2].toLowerCase())) return m[2].toLowerCase();
   return null;
 }
@@ -631,6 +651,13 @@ async function resolveArchiveSuffix(unit, archNum, startPage = 1) {
     }
   }
   return candidates[0];
+}
+
+// Синхронная версия: если суффикс уже подтверждён — возвращаем сразу (без сети),
+// иначе перебираем известные варианты через HEAD-подобную проверку testImage.
+async function ensureSuffixResolved(unit, archNum, startPage = 1) {
+  if (_confirmedSuffix) return _confirmedSuffix;
+  return resolveArchiveSuffix(unit, archNum, startPage);
 }
 
 function pad(num, w) { return String(num).padStart(w, '0'); }
@@ -2446,6 +2473,7 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
   try {
     sendStatus('PDF: определение архива…');
     const archNum  = await detectArchiveNum(unit);
+    await ensureSuffixResolved(unit, archNum, Math.max(1, getViewerImgPage() || 1));
     const titleRaw = getTitleFromPage();
     const filename = `${sanitizeForFilename(titleRaw)}_unit_${unit}.pdf`;
 
@@ -3228,6 +3256,7 @@ async function downloadAll(overrideFrom = null, overrideTo = null) {
   try {
     sendStatus('Определение архива…');
     const archNum    = await detectArchiveNum(unit);
+    await ensureSuffixResolved(unit, archNum, Math.max(1, getViewerImgPage() || 1));
     const titleRaw   = getTitleFromPage();
     const folderName = `${sanitizeForFilename(titleRaw)}_unit_${unit}`;
 
@@ -3952,7 +3981,7 @@ async function downloadCurrent() {
     // Стандартный вьювер (Ярославский архив и аналоги): страница меняется без
     // перезагрузки страницы — номер берём из src картинки вьювера / хеша / поля.
     const archNum = await detectArchiveNum(adapter.unitId);
-    await resolveArchiveSuffix(adapter.unitId, archNum, Math.max(1, getViewerImgPage() || 1));
+    await ensureSuffixResolved(adapter.unitId, archNum, Math.max(1, getViewerImgPage() || 1));
 
     const titleRaw = getTitleFromPage();
     const folder   = `${sanitizeForFilename(titleRaw)}_unit_${adapter.unitId}`;
@@ -3971,7 +4000,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `unit_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(adapter.unitId, archNum, p), filename });
+    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(adapter.unitId, archNum, p, _confirmedSuffix), filename });
     sendStatus(`Скачана стр. ${p}`);
   }
 
@@ -4120,7 +4149,7 @@ ensureSettings().then(async () => {
     const adapter = getAdapterInfo();
     if (adapter) {
       if (adapter.type === 'yar') {
-        await detectArchiveNum(adapter.unitId);
+        await initYarAdapter(adapter.unitId);
       } else if (adapter.type === 'vrr') {
         const offsets = getVrrPageOffsets(adapter.unitId);
         if (offsets.length > 0) {
