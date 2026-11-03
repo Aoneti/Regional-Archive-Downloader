@@ -637,24 +637,55 @@ function getYarViewerTotalPages() {
 
 // Кэш подтверждённого суффикса URL сканов (image / image-inv / inage).
 let _confirmedSuffix = null;
+let _suffixProbePromise = null;   // одна сетевая проверка на вкладку (без перебора при каждом скачивании)
 
-async function resolveArchiveSuffix(unit, archNum, startPage = 1) {
-  if (_confirmedSuffix) return _confirmedSuffix;
-  const candidates = archiveImageSuffixCandidates();
-  for (const sfx of candidates) {
-    const ok = await testImage(imageUrl(unit, archNum, startPage, sfx));
-    if (ok) {
-      _confirmedSuffix = sfx;
-      _archiveImageSuffix = sfx;
-      log('archive image suffix confirmed:', sfx);
-      return sfx;
-    }
-  }
-  return candidates[0];
+// Суффикс из реального src картинки вьювера — сайт отдаёт именно этот URL,
+// поэтому он считается подтверждённым мгновенно, без сетевых проверок.
+function suffixFromViewerDom() {
+  const src = getViewerImgSrc();
+  const m = src && src.match(/\/archive\d+\/([a-z-]+)\/\d+\?/i);
+  if (m && ARCHIVE_IMG_SUFFIXES.includes(m[1].toLowerCase())) return m[1].toLowerCase();
+  return null;
 }
 
-// Синхронная версия: если суффикс уже подтверждён — возвращаем сразу (без сети),
-// иначе перебираем известные варианты через HEAD-подобную проверку testImage.
+function confirmSuffix(sfx) {
+  _confirmedSuffix = sfx;
+  _archiveImageSuffix = sfx;
+  _suffixProbePromise = Promise.resolve(sfx);
+  log('archive image suffix confirmed:', sfx);
+  return sfx;
+}
+
+async function resolveArchiveSuffix(unit, archNum, startPage = 1) {
+  // Быстрые пути без сети: уже подтверждён / виден в DOM вьювера / определён по адресу страницы.
+  if (_confirmedSuffix) return _confirmedSuffix;
+  const fromDom = suffixFromViewerDom();
+  if (fromDom) return confirmSuffix(fromDom);
+  const fromHref = detectSuffixFromViewerHref();
+  if (fromHref) return confirmSuffix(fromHref);
+
+  // Сетевой перебор выполняем один раз; повторные вызовы ждут тот же промис.
+  if (!_suffixProbePromise) {
+    _suffixProbePromise = (async () => {
+      const candidates = archiveImageSuffixCandidates();
+      for (const sfx of candidates) {
+        const ok = await testImage(imageUrl(unit, archNum, startPage, sfx), 4000);
+        if (ok) {
+          _confirmedSuffix = sfx;
+          _archiveImageSuffix = sfx;
+          log('archive image suffix confirmed by probe:', sfx);
+          return sfx;
+        }
+      }
+      _suffixProbePromise = null;   // не кэшируем неудачу — при следующем действии попробуем снова
+      return candidates[0];
+    })();
+  }
+  return _suffixProbePromise;
+}
+
+// Если суффикс уже подтверждён — возвращаем сразу (без сети),
+// иначе запускаем однократный перебор (результат кэшируется).
 async function ensureSuffixResolved(unit, archNum, startPage = 1) {
   if (_confirmedSuffix) return _confirmedSuffix;
   return resolveArchiveSuffix(unit, archNum, startPage);
@@ -3980,27 +4011,57 @@ async function downloadCurrent() {
   } else {
     // Стандартный вьювер (Ярославский архив и аналоги): страница меняется без
     // перезагрузки страницы — номер берём из src картинки вьювера / хеша / поля.
-    const archNum = await detectArchiveNum(adapter.unitId);
-    await ensureSuffixResolved(adapter.unitId, archNum, Math.max(1, getViewerImgPage() || 1));
+    const archNum = ensureArchiveNumSync(adapter.unitId)
+      || await detectArchiveNum(adapter.unitId);
 
     const titleRaw = getTitleFromPage();
     const folder   = `${sanitizeForFilename(titleRaw)}_unit_${adapter.unitId}`;
 
-    let p = getYarViewerPage();
-    if (p === null) p = detectCurrentPage();
+    // Быстрый путь: если вьювер уже показывает картинку — скачиваем ровно её src
+    // (гарантированно существующий URL текущей страницы, без сетевых проверок).
+    const viewerSrc = getViewerImgSrc();
+    const sfxMatch  = viewerSrc && viewerSrc.match(/\/archive\d+\/([a-z-]+)\/\d+\?/i);
+    const domPage   = getViewerImgPage();
+    const hashM     = location.hash.match(/^#(\d+)$/);
+    const hashPage  = hashM ? Number(hashM[1]) : null;
 
-    // Если вьювер ещё не догрузил страницу из хеша — дождёмся, чтобы не скачать первую.
-    const hashM = location.hash.match(/^#(\d+)$/);
-    if (hashM && getViewerImgPage() !== Number(hashM[1])) {
-      const target = Number(hashM[1]);
-      sendStatus(`Ожидание загрузки стр. ${target}…`);
-      if (await waitForViewerPage(target, 12000)) p = target;
+    let p, url;
+    if (viewerSrc && sfxMatch && ARCHIVE_IMG_SUFFIXES.includes(sfxMatch[1].toLowerCase())) {
+      confirmSuffix(sfxMatch[1].toLowerCase());
+      if (hashPage !== null && domPage === hashPage) {
+        // DOM синхронен с хешем — берём src как есть.
+        url = viewerSrc;
+        p   = domPage;
+      } else if (hashPage !== null && domPage !== hashPage) {
+        // Хеш указывает на другую страницу — дождёмся загрузки, чтобы не скачать старую.
+        sendStatus(`Ожидание загрузки стр. ${hashPage}…`);
+        if (await waitForViewerPage(hashPage, 12000)) {
+          p   = hashPage;
+          url = imageUrl(adapter.unitId, archNum, p, _confirmedSuffix);
+        } else {
+          p   = domPage;
+          url = viewerSrc;
+        }
+      } else {
+        p   = domPage ?? getYarViewerPage() ?? detectCurrentPage();
+        url = viewerSrc;
+      }
+    } else {
+      // Картинки вьювера нет — обычный путь с однократным подтверждением суффикса.
+      await ensureSuffixResolved(adapter.unitId, archNum, Math.max(1, getViewerImgPage() || 1));
+      p = getYarViewerPage();
+      if (p === null) p = detectCurrentPage();
+      if (hashPage !== null && getViewerImgPage() !== hashPage) {
+        sendStatus(`Ожидание загрузки стр. ${hashPage}…`);
+        if (await waitForViewerPage(hashPage, 12000)) p = hashPage;
+      }
+      url = imageUrl(adapter.unitId, archNum, p, _confirmedSuffix);
     }
 
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `unit_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(adapter.unitId, archNum, p, _confirmedSuffix), filename });
+    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename });
     sendStatus(`Скачана стр. ${p}`);
   }
 
