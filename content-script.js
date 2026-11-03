@@ -72,12 +72,43 @@ function _clearPDFCache() {
 let cachedArchNum = null;
 let _archiveImageSuffix = null;
 
+// Известные варианты сегмента URL со сканом страницы: /image/, /image-inv/, /inage/ (Ярославский архив).
+const ARCHIVE_IMG_SUFFIXES = ['image', 'image-inv', 'inage'];
+
 function getArchiveImageSuffix() {
   if (_archiveImageSuffix !== null) return _archiveImageSuffix;
-  const invImg = document.querySelector('img[src*="/image-inv/"]');
+
+  // 1. Берём реальный src из вьювера — именно по нему работает сайт.
+  for (const img of document.querySelectorAll('img')) {
+    let src = '';
+    try { src = img.getAttribute('src') || img.currentSrc || img.src || ''; } catch { continue; }
+    const m = src.match(/\/archive\d+\/([a-z-]+)\/\d+\?/i);
+    if (m && ARCHIVE_IMG_SUFFIXES.includes(m[1].toLowerCase())) {
+      _archiveImageSuffix = m[1].toLowerCase();
+      log('archive image suffix detected from DOM:', _archiveImageSuffix);
+      return _archiveImageSuffix;
+    }
+  }
+
+  // 2. Fallback: ищем инвертированный просмотр, иначе стандартный вариант.
+  const invImg = document.querySelector('img[src*="/image-inv/"], img[src*="/inage/"]');
   _archiveImageSuffix = invImg ? 'image-inv' : 'image';
-  log('archive image suffix detected:', _archiveImageSuffix);
+  log('archive image suffix fallback:', _archiveImageSuffix);
   return _archiveImageSuffix;
+}
+
+// Все известные суффиксы, начиная с определённого по DOM (для перебора при проверке страниц).
+function archiveImageSuffixCandidates() {
+  const cur = getArchiveImageSuffix();
+  return [cur, ...ARCHIVE_IMG_SUFFIXES.filter(s => s !== cur)];
+}
+
+// Определяет реальный суффикс по фактической ссылке на страницу вьювера
+// (в т.ч. по hash-адресу вида /archive27/inage/937?n=2, которого нет в DOM).
+function detectSuffixFromViewerHref() {
+  const m = location.pathname.match(/^\/archive(\d+)\/([a-z-]+)\/(\d+)$/i);
+  if (m && ARCHIVE_IMG_SUFFIXES.includes(m[2].toLowerCase())) return m[2].toLowerCase();
+  return null;
 }
 
 // ── Утилиты безопасности ─────────────────────────────────────────────────────
@@ -505,9 +536,101 @@ function sanitizeForFilename(s) {
   return (str.length > 100 ? str.slice(0, 100) : str) || 'untitled';
 }
 
-function imageUrl(unit, archNum, page) {
-  const suffix = getArchiveImageSuffix();
-  return `${location.origin}/archive${archNum}/${suffix}/${unit}?n=${page}`;
+function imageUrl(unit, archNum, page, suffix = null) {
+  const sfx = suffix || getArchiveImageSuffix();
+  return `${location.origin}/archive${archNum}/${sfx}/${unit}?n=${page}`;
+}
+
+// Ссылка на страницу в самом вьювере: /archive27/unit/937#N
+function yarViewerPageHref(page) {
+  const m = location.pathname.match(/^(\/archive\d+\/unit\/\d+)\/?$/i);
+  if (!m) return null;
+  return `${location.origin}${m[1]}#${page}`;
+}
+
+// ── Ярославский (iviewer) вьювер: страницы меняются без перезагрузки ─────────
+// Вьювер jquery.iviewer держит в DOM <img src="/archiveNN/<suffix>/UNIT?n=K">,
+// где K — реально отображаемая страница. При этом ссылка вида …/unit/937#2
+// открывает ту же страницу 2, но в DOM до загрузки может оставаться n=1.
+const YAR_PAGE_SELECTORS = '#page-to, input[id*="page" i]';
+
+function getViewerImgPage() {
+  for (const img of document.querySelectorAll('img')) {
+    let src = '';
+    try { src = img.getAttribute('src') || img.currentSrc || img.src || ''; } catch { continue; }
+    const m = src.match(/\/archive\d+\/[a-z-]+\/\d+\?[^\s]*[?&]n=(\d+)/i);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+function getPageToFieldValue() {
+  const els = [...document.querySelectorAll(YAR_PAGE_SELECTORS)];
+  for (const el of els) {
+    const raw = String(el.value ?? '').trim();
+    // Поле формата «4 из 120» (Ярославский архив) или просто число.
+    const m = raw.match(/^(\d+)\s*(?:из|of)\s*(\d+)$/i);
+    if (m) return { page: Number(m[1]), total: Number(m[2]) };
+    if (/^\d+$/.test(raw)) return { page: Number(raw), total: null };
+  }
+  return null;
+}
+
+// Страница, открытая в вьювере в данный момент (или null — если определить нельзя).
+function getYarViewerPage() {
+  const domPage = getViewerImgPage();
+
+  // Hash задаётся сайтом при переходе по страницам и вручную («…#5»).
+  let hashPage = null;
+  const hm = location.hash.match(/^#(\d+)$/);
+  if (hm) hashPage = Math.max(1, parseInt(hm[1], 10));
+
+  const field = getPageToFieldValue();
+
+  // Если поле показывает страницу, которой ещё нет в DOM — вьювер только что
+  // переключился и картинка не успела обновиться; вернём null, чтобы дождаться.
+  if (field && field.page >= 1 && domPage !== null && field.page !== domPage) {
+    if (hashPage === field.page) return null;   // идём по hash — ждём загрузки
+    return field.page;                          // поле надёжнее — берём его
+  }
+
+  if (domPage !== null && domPage >= 1) {
+    // Доверяем DOM; hash используем как подсказку, если DOM отстал.
+    if (hashPage !== null && hashPage !== domPage && field && field.page === hashPage) {
+      return null;
+    }
+    return domPage;
+  }
+
+  if (field && field.page >= 1) return field.page;
+  if (hashPage !== null) return hashPage;
+  return null;
+}
+
+let _yarViewerMaxPages = null;
+
+function getYarViewerTotalPages() {
+  const field = getPageToFieldValue();
+  if (field?.total) { _yarViewerMaxPages = field.total; return field.total; }
+  return _yarViewerMaxPages;
+}
+
+// Кэш подтверждённого суффикса URL сканов (image / image-inv / inage).
+let _confirmedSuffix = null;
+
+async function resolveArchiveSuffix(unit, archNum, startPage = 1) {
+  if (_confirmedSuffix) return _confirmedSuffix;
+  const candidates = archiveImageSuffixCandidates();
+  for (const sfx of candidates) {
+    const ok = await testImage(imageUrl(unit, archNum, startPage, sfx));
+    if (ok) {
+      _confirmedSuffix = sfx;
+      _archiveImageSuffix = sfx;
+      log('archive image suffix confirmed:', sfx);
+      return sfx;
+    }
+  }
+  return candidates[0];
 }
 
 function pad(num, w) { return String(num).padStart(w, '0'); }
@@ -523,12 +646,17 @@ function detectCurrentPage() {
     return getArsvoCurrentPage();
   }
 
+  // iviewer-вьювер (Ярославский архив и аналоги): номер страницы виден по src
+  // картинки /archiveNN/inage/UNIT?n=K, по хешу «#K» и по полю «N из M».
+  const ypage = getYarViewerPage();
+  if (ypage !== null) return ypage;
+
   let maxPage = 1;
   let found   = false;
   for (const img of document.querySelectorAll('img')) {
     try {
       const src = img.getAttribute('src') || img.src || '';
-      if (src.includes('/image/') || src.includes('/image-inv/')) {
+      if (src.includes('/image/') || src.includes('/image-inv/') || src.includes('/inage/')) {
         const m = src.match(/[?&]n=(\d+)/);
         if (m) {
           const n = Number(m[1]);
@@ -539,6 +667,51 @@ function detectCurrentPage() {
     } catch { /* ignore */ }
   }
   return found ? maxPage : 1;
+}
+
+// Дождаться, пока вьювер отобразит нужную страницу (переключение по hash).
+async function waitForViewerPage(targetPage, timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (getViewerImgPage() === targetPage) return true;
+    await sleep(150);
+  }
+  return getViewerImgPage() === targetPage;
+}
+
+// Навигация вьювера на страницу targetPage с ожиданием загрузки скана.
+async function navigateYarViewerToPage(targetPage) {
+  targetPage = Math.max(1, targetPage | 0);
+  if (getViewerImgPage() === targetPage) return true;
+
+  const href = yarViewerPageHref(targetPage);
+  if (href && location.href !== href) {
+    // Меняем только hash — сайт сам подгрузит страницу (обработчик hashchange).
+    history.pushState(null, '', href);
+    window.dispatchEvent(new HashChangeEvent('hashchange', {
+      oldURL: location.href, newURL: href
+    }));
+  } else if (href) {
+    window.dispatchEvent(new HashChangeEvent('hashchange', { oldURL: href, newURL: href }));
+  }
+
+  const ok = await waitForViewerPage(targetPage);
+  if (ok) return true;
+
+  // Fallback: напрямую просим вьювер загрузить нужный скан.
+  try {
+    const jQ = window.jQuery || window.$;
+    const el = document.getElementById('viewer');
+    if (jQ && el && jQ(el).data('ui-iviewer')) {
+      const archNum = cachedArchNum || location.pathname.match(/\/archive(\d+)\//)?.[1] || '27';
+      const unit = getUnitId();
+      const sfx = _confirmedSuffix || getArchiveImageSuffix();
+      jQ(el).iviewer('loadImage', imageUrl(unit, archNum, targetPage, sfx));
+      return await waitForViewerPage(targetPage, 8000);
+    }
+  } catch (e) { log('navigateYarViewer fallback error:', e); }
+
+  return false;
 }
 
 // ── VRR Адаптер ────────────────────
@@ -1751,14 +1924,14 @@ async function detectArchiveNum(unit) {
   if (cachedArchNum) return cachedArchNum;
 
   const fromPath = location.pathname.match(/\/archive(\d+)\//)?.[1];
-  if (fromPath) { cachedArchNum = fromPath; return fromPath; }
+  if (fromPath) { cachedArchNum = fromPath; return cachedArchNum; }
   const hostname = location.hostname;
   const known = ARCHIVE_NUM_MAP[hostname];
   if (known) {
     const ok = await testImage(
       `${location.origin}/archive${known}/${getArchiveImageSuffix()}/${unit}?n=1&_ts=${Date.now()}`, 4000
     );
-    if (ok) { cachedArchNum = known; return known; }
+    if (ok) { cachedArchNum = known; return cachedArchNum; }
   }
 
   log('archiveNum not in pathname or map, probing…');
@@ -1767,11 +1940,31 @@ async function detectArchiveNum(unit) {
     const ok = await testImage(
       `${location.origin}/archive${n}/${getArchiveImageSuffix()}/${unit}?n=1&_ts=${Date.now()}`, 4000
     );
-    if (ok) { cachedArchNum = n; return n; }
+    if (ok) { cachedArchNum = n; return cachedArchNum; }
   }
 
   cachedArchNum = known ?? '27';
   return cachedArchNum;
+}
+
+// Синхронный вариант: номер архива берётся из URL страницы /archiveNN/unit/ID.
+function ensureArchiveNumSync(unit) {
+  if (cachedArchNum) return cachedArchNum;
+  const fromPath = location.pathname.match(/\/archive(\d+)\//)?.[1];
+  if (fromPath) cachedArchNum = fromPath;
+  else if (unit) cachedArchNum = ARCHIVE_NUM_MAP[location.hostname] ?? null;
+  return cachedArchNum;
+}
+
+// Полная инициализация «стандартного» адаптера (Ярославский архив и аналоги):
+// номер архива + реально работающий суффикс URL сканов (image/image-inv/inage).
+async function initYarAdapter(unit) {
+  if (!unit) return null;
+  const archNum = await detectArchiveNum(unit);
+  // Страница из вьювера — самый надёжный ориентир для проверки существования.
+  const probePage = Math.max(1, getViewerImgPage() || 1);
+  const sfx = await resolveArchiveSuffix(unit, archNum, probePage);
+  return { archNum, suffix: sfx };
 }
 
 // ── Проверка существования страницы ──────────────────────────────────────────
@@ -3756,10 +3949,25 @@ async function downloadCurrent() {
     sendStatus('ЦГА Москвы: скачана текущая страница');
 
   } else {
-    const archNum  = await detectArchiveNum(adapter.unitId);
+    // Стандартный вьювер (Ярославский архив и аналоги): страница меняется без
+    // перезагрузки страницы — номер берём из src картинки вьювера / хеша / поля.
+    const archNum = await detectArchiveNum(adapter.unitId);
+    await resolveArchiveSuffix(adapter.unitId, archNum, Math.max(1, getViewerImgPage() || 1));
+
     const titleRaw = getTitleFromPage();
     const folder   = `${sanitizeForFilename(titleRaw)}_unit_${adapter.unitId}`;
-    const p        = detectCurrentPage();
+
+    let p = getYarViewerPage();
+    if (p === null) p = detectCurrentPage();
+
+    // Если вьювер ещё не догрузил страницу из хеша — дождёмся, чтобы не скачать первую.
+    const hashM = location.hash.match(/^#(\d+)$/);
+    if (hashM && getViewerImgPage() !== Number(hashM[1])) {
+      const target = Number(hashM[1]);
+      sendStatus(`Ожидание загрузки стр. ${target}…`);
+      if (await waitForViewerPage(target, 12000)) p = target;
+    }
+
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `unit_${adapter.unitId}_p${pad(p, 3)}.jpg`;
@@ -3858,8 +4066,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!previewUrl && offs.length > 0) previewUrl = vrrThumbUrl(unit, offs[0]);
       } else if (adapter?.type === 'arsvo') {
         if (adapter.guid) previewUrl = arsvoImageUrl(adapter.guid, curPage - 1);
-      } else if (adapter?.type === 'yar' && cachedArchNum) {
-        previewUrl = imageUrl(unit, cachedArchNum, curPage);
+      } else if (adapter?.type === 'yar') {
+        // Картинка вьювера — самый точный превью текущей страницы.
+        previewUrl = getViewerImgSrc() ||
+          (cachedArchNum ? imageUrl(unit, cachedArchNum, curPage) : null);
       } else if (adapter?.type === 'cgamos-spa') {
         const dataUrl = extractCgamosRenderedImage();
         if (dataUrl && dataUrl.length > 5000) previewUrl = dataUrl;
