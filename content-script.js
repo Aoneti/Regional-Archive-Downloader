@@ -117,6 +117,36 @@ function getViewerImgSrc() {
   return null;
 }
 
+// Картинка вьювера реально видна на экране (в отличие от «предзагруженного»
+// соседнего скана, который сайт держит в скрытом <img>).
+function isViewerScanVisible(img) {
+  try {
+    if (!img.isConnected) return false;
+    if (img.offsetParent === null && getComputedStyle(img).position !== 'fixed') return false;
+    const r = img.getBoundingClientRect();
+    return r.width > 1 && r.height > 1;
+  } catch { return true; }
+}
+
+// URL скана, который в данный момент показывается пользователю: видимая
+// картинка вьювера с номером страницы, соответствующим хешу «#N». Если такой
+// нет (переход только что выполнен, картинка ещё не отрисовалась) — null.
+function getVisibleViewerScanUrl(expectedPage = null) {
+  const visibleOnly = window.innerWidth > 0 && window.innerHeight > 0;
+  for (const img of document.querySelectorAll('img')) {
+    let src = '';
+    try { src = img.getAttribute('src') || img.currentSrc || img.src || ''; } catch { continue; }
+    if (!/\/archive\d+\/[a-z-]+\/\d+\?[^#\s]*[?&]n=\d+/i.test(src)) continue;
+    if (visibleOnly && !isViewerScanVisible(img)) continue;
+    if (expectedPage !== null) {
+      const m = src.match(/[?&]n=(\d+)/);
+      if (!m || Number(m[1]) !== expectedPage) continue;
+    }
+    try { return new URL(src, location.href).href; } catch { return src; }
+  }
+  return null;
+}
+
 // Все известные суффиксы, начиная с определённого по DOM (для перебора при проверке страниц).
 function archiveImageSuffixCandidates() {
   const cur = getArchiveImageSuffix();
