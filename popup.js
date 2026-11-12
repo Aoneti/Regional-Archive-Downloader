@@ -1235,7 +1235,12 @@ chrome.runtime.onMessage.addListener(msg => {
       if (resumePg > 1 && resumePg <= rangeMax) { fromPage = resumePg; updateRangeUI(); }
       setStatus(`↩ Прервано на стр. ${rs.lastPage} из ${rs.totalPages} (${ageMin} мин. назад) — двойной клик по слайдеру для сброса`);
     } else if (state.currentPage && state.currentPage > 1) {
+      // Диапазон по умолчанию начинается с открытой страницы — показываем это,
+      // чтобы «Скачать документ» с середины дела не оказался неожиданностью.
       fromPage = state.currentPage; updateRangeUI();
+      if (!state.isRunning) {
+        setStatus(`Скачивание начнётся со стр. ${state.currentPage} — двойной клик по шкале для сброса`);
+      }
     }
 
     if (state.isRunning) {
