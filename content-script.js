@@ -855,10 +855,17 @@ function getArsvoCurrentPage() {
 function getArsvoTotalPagesFromDOM() {
   const hiddenSels = [
     '#MainPlaceHolder_StorageFilesViewerControl_h_pagesCount',
+    '#MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_totalPages',
+    '#MainPlaceHolder_StorageFilesViewerControl_h_totalPages',
     'input[id$="_h_pagesCount"]',
+    'input[id$="_h_totalPages"]',
+    'input[id*="h_totalPages"]',
+    'input[id*="h_pagesCount"]',
     'input[id*="PagesCount"]',
     'input[id*="pagesCount"]',
     'input[id*="TotalPages"]',
+    'input[id*="totalPages"]',
+    'input[id*="_h_pageNumber"]',
     'span[id*="lbPagesCount"]',
     'span[id*="TotalPages"]',
     '[id*="TotalCount"]',
@@ -872,6 +879,18 @@ function getArsvoTotalPagesFromDOM() {
     const raw = el.value !== undefined ? el.value : el.textContent;
     const n   = parseInt(raw);
     if (!isNaN(n) && n > 0) return n;
+  }
+
+  // Penza and some ELAR instances use FilesDropDownList where each option is a file.
+  // For multi-page documents inside one file, pages are counted via tiles, not dropdown.
+  // But for single-image docs the dropdown may be the only hint that pages exist.
+  // We only trust dropdown as floor, not authoritative total — real probing happens later.
+  // However if hidden counts are 0 and we see a dropdown with many files, treat largest number.
+  const ddl = document.getElementById('MainPlaceHolder_StorageFilesViewerControl_FilesDropDownList')
+           || document.querySelector('select[id*="FilesDropDownList"]');
+  if (ddl && ddl.options && ddl.options.length > 1) {
+    const n = ddl.options.length;
+    if (n > 1 && n < 50000) return n;
   }
 
   for (const el of document.querySelectorAll('span, td, label')) {
@@ -908,6 +927,20 @@ function elarSingleTileUrl(guid, pageIndex) {
   return `${location.origin}/Pages/ImageFile.ashx?level=12&x=0&y=0&tileSize=999999&tileOverlap=1&id=${guid}&page=${pageIndex}&rotation=0&searchtext=`;
 }
 
+function getArsvoImageDimensions() {
+  // Penza viewer stores real image size in hidden inputs DeepZoomImageViewer_h_width/_height
+  const wEl = document.getElementById('MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_width')
+           || document.querySelector('input[id*="_h_width"]');
+  const hEl = document.getElementById('MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_height')
+           || document.querySelector('input[id*="_h_height"]');
+  if (wEl && hEl) {
+    const w = parseInt(wEl.value);
+    const h = parseInt(hEl.value);
+    if (w > 0 && h > 0) return { width: w, height: h };
+  }
+  return null;
+}
+
 function getArsvoTileParams() {
   const img = document.querySelector('img[src*="ImageFile.ashx"][src*="level="]');
   if (!img) {
@@ -920,6 +953,30 @@ function getArsvoTileParams() {
   const tileSize= parseInt(src.match(/[?&]tileSize=(\d+)/)?.[1])    || 800;
   const overlap = parseInt(src.match(/[?&]tileOverlap=(\d+)/)?.[1]) || 1;
   return { level, tileSize, overlap };
+}
+
+async function fetchTileBlob(url) {
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  if (!blob || blob.size < 100) return null;
+  return blob;
+}
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
+
+async function fetchTileAsImage(url) {
+  const blob = await fetchTileBlob(url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now());
+  if (!blob) return null;
+  try { return await loadImageFromBlob(blob); } catch { return null; }
 }
 
 const ARSVO_TILE_MIN_BYTES = 3000;
@@ -979,43 +1036,70 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   const { cols, rows } = await probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap);
   if (cols === 0 || rows === 0) return null;
 
+  // Prefer real image dimensions from hidden inputs (Penza: 16384x11760) to crop overlap artefacts.
+  // Fallback is cols*tileSize which may be slightly larger but still usable.
+  const dims = getArsvoImageDimensions();
+  const canvasW = dims ? dims.width  : cols * tileSize;
+  const canvasH = dims ? dims.height : rows * tileSize;
+
   const canvas = document.createElement('canvas');
-  canvas.width  = cols * tileSize;
-  canvas.height = rows * tileSize;
+  canvas.width  = canvasW;
+  canvas.height = canvasH;
   const ctx = canvas.getContext('2d');
 
   let loaded = 0;
   let failed = 0;
   const total = cols * rows;
 
-  await Promise.all(
-    Array.from({ length: rows }, (_, y) =>
-      Array.from({ length: cols }, (_, x) =>
-        new Promise(resolve => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            ctx.drawImage(img, x * tileSize, y * tileSize);
-            loaded++;
-            progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
-            resolve();
-          };
-          img.onerror = () => {
-            failed++;
-            progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
-            resolve();
-          };
-          img.src = arsvoTileUrl(guid, pageIndex, level, x, y, tileSize, overlap) + '&_ts=' + Date.now();
-        })
-      )
-    ).flat()
-  );
+  // Concurrency control for tile fetches — avoid firing 300 fetches at once.
+  const CONCURRENCY = 12;
+  const tasks = [];
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) tasks.push({ x, y });
+  }
+
+  let idx = 0;
+  async function worker() {
+    while (true) {
+      if (isStopped) return;
+      const t = tasks[idx++];
+      if (!t) return;
+      const url = arsvoTileUrl(guid, pageIndex, level, t.x, t.y, tileSize, overlap);
+      try {
+        const img = await fetchTileAsImage(url);
+        if (img) {
+          // Draw with overlap correction: logical tile origin is x*(tileSize-overlap) except first row/col.
+          // Penza uses tileOverlap=1, so step is tileSize. Using tileSize step works for fetch tiles
+          // but last row/col may extend beyond canvas — clipping via dest clipping handles it.
+          const dx = t.x * tileSize;
+          const dy = t.y * tileSize;
+          // Clip to canvas bounds for last tiles that exceed dims
+          const dw = Math.min(img.naturalWidth  || tileSize, canvasW - dx);
+          const dh = Math.min(img.naturalHeight || tileSize, canvasH - dy);
+          if (dw > 0 && dh > 0) {
+            // If source tile larger than remaining canvas (due to overlap), crop source too
+            ctx.drawImage(img, 0, 0, dw, dh, dx, dy, dw, dh);
+          }
+          loaded++;
+          progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
+        } else {
+          failed++;
+          progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
+        }
+      } catch (e) {
+        failed++;
+        progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()));
 
   if (isStopped) throw new Error('stopped');
   if (failed > total / 2) {
     throw new Error(
       `ЭЛАР: стр. ${pageIndex + 1} — ${failed}/${total} тайлов не загружены` +
-      (failed === total ? ' (возможно CORS-блокировка)' : '')
+      (failed === total ? ' (возможно CORS-блокировка или сессия истекла)' : '')
     );
   }
 
@@ -2883,13 +2967,24 @@ async function generatePDFCgamosArsvo(guid, unitId, overrideFrom, overrideTo) {
           } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
         } else {
           try {
-            const res = await fetch(arsvoImageUrl(guid, p - 1));
-            if (res.ok) {
-              bytes = new Uint8Array(await res.arrayBuffer());
+            const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(`PDF/ЦГА: ${t}`));
+            if (dataUrl) {
+              bytes = dataUrlToBytes(dataUrl);
               imgCachePut(unitId, p, bytes);
               throttle.onSuccess();
-            } else { throttle.onRateLimit(res.status); failedNums.add(p); }
-          } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
+            } else {
+              // fallback to ImageFilePart if stitch returns null
+              const res = await fetch(arsvoImageUrl(guid, p - 1));
+              if (res.ok) {
+                bytes = new Uint8Array(await res.arrayBuffer());
+                imgCachePut(unitId, p, bytes);
+                throttle.onSuccess();
+              } else { throttle.onRateLimit(res.status); failedNums.add(p); }
+            }
+          } catch (e) {
+            if (e.message==='stopped') throw e;
+            log('PDF/ЦГА stitch error p' + p, e); failedNums.add(p);
+          }
         }
       }
 
@@ -3675,12 +3770,26 @@ async function downloadAllCgamos(overrideFrom = null, overrideTo = null) {
           ? `${folderName}/${pad(p, padWidth)}.jpg`
           : `cgamos_${docId}_p${pad(p, padWidth)}.jpg`;
 
-        const success = await downloadWithSemaphore(arsvoImageUrl(guid, p - 1), filename);
-        if (!success) {
-          failedPages.push(p);
-          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+        if (isElarSingleTileMode()) {
+          const success = await downloadWithSemaphore(elarSingleTileUrl(guid, p - 1), filename);
+          if (!success) { failedPages.push(p); if (cfg.adaptiveSpeed) throttle.onRateLimit(0); } else throttle.onSuccess();
         } else {
-          throttle.onSuccess();
+          // Use tiled stitch for full resolution if viewer is tiled (some CGAMOS docs use ELAR viewer with tiles)
+          try {
+            const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(t));
+            if (dataUrl) {
+              chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+              throttle.onSuccess();
+              await sleep(400);
+            } else {
+              const success = await downloadWithSemaphore(arsvoImageUrl(guid, p - 1), filename);
+              if (!success) failedPages.push(p); else throttle.onSuccess();
+            }
+          } catch (e) {
+            if (e.message === 'stopped') throw e;
+            log('ЦГА stitch error p'+p,e); failedPages.push(p);
+            if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+          }
         }
 
         if (p % 10 === 0) saveResumeState(docId, { lastPage: p, totalPages, folderName, fromPage: pFrom });
@@ -3794,8 +3903,30 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `unit_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
-    sendStatus(`Скачана стр. ${p}`);
+    // Penza/ELAR tiled viewer: current page must be stitched from tiles for full resolution.
+    // ImageFilePart.ashx returns only a low-res preview ("эскиз"), so prefer tiled path.
+    if (isElarSingleTileMode()) {
+      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename });
+      sendStatus(`Скачана стр. ${p}`);
+    } else {
+      try {
+        sendStatus(`ЭЛАР: сшивка стр. ${p}…`);
+        const dataUrl = await stitchArsvoPageOnCanvas(adapter.guid, p - 1, t => sendStatus(t));
+        if (dataUrl) {
+          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+          sendStatus(`Скачана стр. ${p} (тайлы)`);
+        } else {
+          // fallback to legacy low-res URL if stitch not applicable
+          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+          sendStatus(`Скачана стр. ${p} (резерв)`);
+        }
+      } catch (e) {
+        if (e.message === 'stopped') throw e;
+        console.warn('[RAD] arsvo current stitch failed, fallback:', e);
+        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+        sendStatus(`Скачана стр. ${p} (резерв: ${e.message})`);
+      }
+    }
 
   } else if (adapter.type === 'yandex') {
     const curPage  = getYandexArchiveCurrentPage();
@@ -3844,8 +3975,26 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `cgamos_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
-    sendStatus(`ЦГА Москвы: скачана стр. ${p}`);
+    if (isElarSingleTileMode()) {
+      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename });
+      sendStatus(`ЦГА Москвы: скачана стр. ${p}`);
+    } else {
+      try {
+        sendStatus(`ЦГА: сшивка стр. ${p}…`);
+        const dataUrl = await stitchArsvoPageOnCanvas(adapter.guid, p - 1, t => sendStatus(t));
+        if (dataUrl) {
+          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+          sendStatus(`ЦГА Москвы: скачана стр. ${p} (тайлы)`);
+        } else {
+          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+          sendStatus(`ЦГА Москвы: скачана стр. ${p} (резерв)`);
+        }
+      } catch (e) {
+        if (e.message === 'stopped') throw e;
+        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+        sendStatus(`ЦГА Москвы: скачана стр. ${p} (резерв)`);
+      }
+    }
 
   } else if (adapter.type === 'cgamos-dom') {
     const pageImgs = collectCgamosPageImageUrls();
@@ -3961,14 +4110,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         if (!previewUrl && offs.length > 0) previewUrl = vrrThumbUrl(unit, offs[0]);
       } else if (adapter?.type === 'arsvo') {
-        if (adapter.guid) previewUrl = arsvoImageUrl(adapter.guid, curPage - 1);
+        if (adapter.guid) {
+          previewUrl = isElarSingleTileMode()
+            ? elarSingleTileUrl(adapter.guid, curPage - 1)
+            : arsvoImageUrl(adapter.guid, curPage - 1);
+        }
       } else if (adapter?.type === 'yar' && cachedArchNum) {
         previewUrl = imageUrl(unit, cachedArchNum, curPage);
       } else if (adapter?.type === 'cgamos-spa') {
         const dataUrl = extractCgamosRenderedImage();
         if (dataUrl && dataUrl.length > 5000) previewUrl = dataUrl;
       } else if (adapter?.type === 'cgamos-arsvo' && adapter.guid) {
-        previewUrl = arsvoImageUrl(adapter.guid, curPage - 1);
+        previewUrl = isElarSingleTileMode()
+          ? elarSingleTileUrl(adapter.guid, curPage - 1)
+          : arsvoImageUrl(adapter.guid, curPage - 1);
       } else if (adapter?.type === 'kaisa') {
         const imgs = getKaisaImageUrls();
         const raw  = imgs[getKaisaCurrentPage() - 1] || imgs[0];
