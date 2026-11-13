@@ -17,10 +17,21 @@ let settingsCache = null;
 
 function getSettings() {
   return new Promise(resolve => {
-    chrome.storage.sync.get(DEFAULTS, items => {
-      settingsCache = Object.assign({}, DEFAULTS, items || {});
-      resolve(settingsCache);
-    });
+    try {
+      if (!isExtensionContextValid()) {
+        settingsCache = Object.assign({}, DEFAULTS);
+        resolve(settingsCache); return;
+      }
+      chrome.storage.sync.get(DEFAULTS, items => {
+        const err = chrome.runtime.lastError;
+        if (err) { settingsCache = Object.assign({}, DEFAULTS, items || {}); resolve(settingsCache); return; }
+        settingsCache = Object.assign({}, DEFAULTS, items || {});
+        resolve(settingsCache);
+      });
+    } catch (e) {
+      if (handleContextError(e)) { settingsCache = Object.assign({}, DEFAULTS); resolve(settingsCache); }
+      else { settingsCache = Object.assign({}, DEFAULTS); resolve(settingsCache); }
+    }
   });
 }
 
@@ -29,12 +40,14 @@ async function ensureSettings() {
   return settingsCache;
 }
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync') {
-    settingsCache = null;
-    log('settings cache invalidated');
-  }
-});
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync') {
+      settingsCache = null;
+      log('settings cache invalidated');
+    }
+  });
+} catch (e) { if (!String(e.message||'').includes('Extension context invalidated')) throw e; }
 
 // ── Константы ─────────────────────────────────────────────────────────────────
 
@@ -366,22 +379,72 @@ async function waitIfPaused() {
 }
 
 // ── Хелперы общения с background/popup ───────────────────────────────────────
+function isExtensionContextValid() {
+  try { return !!(chrome.runtime && chrome.runtime.id); } catch { return false; }
+}
+function isContextInvalidatedError(e) {
+  return e && typeof e.message === 'string' && e.message.includes('Extension context invalidated');
+}
+function showContextInvalidatedHint() {
+  // Fallback DOM banner when background is gone (extension reloaded/updated)
+  if (document.getElementById('rad-context-hint')) return;
+  const d = document.createElement('div');
+  d.id = 'rad-context-hint';
+  d.textContent = 'RAD: расширение было обновлено — перезагрузите страницу (Ctrl+R) и запустите загрузку заново.';
+  Object.assign(d.style, {
+    position:'fixed', top:'12px', left:'50%', transform:'translateX(-50%)',
+    background:'#d32f2f', color:'#fff', padding:'10px 18px', borderRadius:'8px',
+    zIndex:'2147483647', fontSize:'13px', fontFamily:'sans-serif',
+    boxShadow:'0 4px 12px rgba(0,0,0,0.3)', maxWidth:'90vw', textAlign:'center'
+  });
+  document.body?.appendChild(d);
+  setTimeout(()=> d.remove(), 8000);
+}
+function safeSendMessage(msg, callback) {
+  if (!isExtensionContextValid()) {
+    const e = new Error('Extension context invalidated');
+    e.isContextInvalidated = true;
+    throw e;
+  }
+  try {
+    if (typeof callback === 'function') chrome.runtime.sendMessage(msg, callback);
+    else chrome.runtime.sendMessage(msg, () => { void chrome.runtime.lastError; });
+  } catch (e) {
+    if (isContextInvalidatedError(e)) { e.isContextInvalidated = true; throw e; }
+    throw e;
+  }
+}
+function handleContextError(e) {
+  if (e && (e.isContextInvalidated || isContextInvalidatedError(e))) {
+    console.warn('[RAD] Extension context invalidated — перезагрузите страницу');
+    showContextInvalidatedHint();
+    return true;
+  }
+  return false;
+}
 function sendStatus(text) {
-  chrome.runtime.sendMessage({ type: 'STATUS', text });
+  try { safeSendMessage({ type: 'STATUS', text }); } catch (e) { if (!handleContextError(e)) console.warn('[RAD] sendStatus:', e); }
 }
-
 function sendProgress(cur, total) {
-  const percent = total > 0 ? Math.round((cur / total) * 100) : 0;
-  chrome.runtime.sendMessage({ type: 'PROGRESS', percent, current: cur, total });
+  try {
+    const percent = total > 0 ? Math.round((cur / total) * 100) : 0;
+    safeSendMessage({ type: 'PROGRESS', percent, current: cur, total });
+  } catch (e) { if (!handleContextError(e)) console.warn('[RAD] sendProgress:', e); }
 }
-
 function sendDone(text, extra = {}) {
-  chrome.runtime.sendMessage({ type: 'DONE', text, ...extra });
+  try { safeSendMessage({ type: 'DONE', text, ...extra }); } catch (e) { if (!handleContextError(e)) console.warn('[RAD] sendDone:', e); }
 }
-
 function setIcon(state) {
-  chrome.runtime.sendMessage({ type: 'SET_ICON', state });
+  try { safeSendMessage({ type: 'SET_ICON', state }); } catch (e) { if (!handleContextError(e)) log('setIcon:', e); }
 }
+// Глобально глушим шум от уже убитого контекста — не засоряем консоль пользователя
+window.addEventListener('unhandledrejection', ev => {
+  const msg = String(ev.reason && ev.reason.message || ev.reason || '');
+  if (msg.includes('Extension context invalidated')) { ev.preventDefault(); console.warn('[RAD] подавлен unhandledrejection: context invalidated'); }
+});
+window.addEventListener('error', ev => {
+  if (String(ev.message || '').includes('Extension context invalidated')) { /* не ломаем страницу */ }
+});
 
 // ── Утилиты DOM / URL ─────────────────────────────────────────────────────────
 function getUnitId() {
@@ -763,17 +826,31 @@ const ARSVO_GUID_SEL =
   '#MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_fileId';
 
 function isArsvoPage() {
-  if (document.querySelector(ARSVO_GUID_SEL)?.value?.includes('-')) return true;
-  if (document.getElementById('storageFilesViewerPnl')) return true;
-  return !!(
-    document.querySelector('img[src*="ImageFile.ashx"][src*="id="]') ||
-    document.querySelector('img[src*="ImageFile.ashx"][src*="Id="]') ||
-    document.querySelector('img[src*="ImageFilePart.ashx"]')
-  );
+  const guidEl = document.querySelector(ARSVO_GUID_SEL);
+  if (guidEl?.value?.includes('-')) return true;
+  const hiddenGuid = document.querySelector('input[type="hidden"][id*="_h_fileId"]');
+  if (hiddenGuid?.value?.match(/^[0-9a-f-]{36}$/i)) return true;
+  const hasTile = document.querySelector('img[src*="ImageFile.ashx"][src*="id="]') ||
+                  document.querySelector('img[src*="ImageFile.ashx"][src*="Id="]') ||
+                  document.querySelector('img[src*="ImageFilePart.ashx"]');
+  if (hasTile) {
+    // Search page may contain thumbnails via same endpoint — require that we can extract a GUID
+    // and that viewer panel is actually populated (not empty Search.aspx placeholder)
+    const imgGuid = getArsvoGuid();
+    if (imgGuid) return true;
+  }
+  return false;
 }
 function isElarPage() {
-  return !!(document.getElementById('storageFilesViewerPnl') ||
-            document.querySelector('[id$="ForwardBtn"]'));
+  const pnl = document.getElementById('storageFilesViewerPnl');
+  if (pnl) {
+    const hasGuid = !!pnl.querySelector('input[id*="_h_fileId"][value*="-"]');
+    const hasImg  = !!pnl.querySelector('img[src*="ImageFile"]');
+    const hasNav  = !!pnl.querySelector('[id$="ForwardBtn"]') || !!pnl.querySelector('[id$="BackBtn"]');
+    // Panel alone is not enough — on Search.aspx it exists empty; require real content
+    if (hasGuid || hasImg || hasNav) return true;
+  }
+  return !!document.querySelector('[id$="ForwardBtn"]');
 }
 
 function getArsvoUnitId() {
@@ -2051,14 +2128,23 @@ async function downloadWithSemaphore(url, filename) {
       finish(false);
     }, DOWNLOAD_TIMEOUT_MS);
 
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename }, (response) => {
-      void chrome.runtime.lastError;
-      if (isStopped || response?.error != null || response?.downloadId == null) {
-        finish(!isStopped && response?.error == null);
-        return;
-      }
-      downloadResolvers.set(response.downloadId, finish);
-    });
+    try {
+      if (!isExtensionContextValid()) { finish(false); if (handleContextError(new Error('Extension context invalidated'))) {} return; }
+      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename }, (response) => {
+        void chrome.runtime.lastError;
+        if (isStopped || response?.error != null || response?.downloadId == null) {
+          if (chrome.runtime.lastError && String(chrome.runtime.lastError.message||'').includes('Extension context invalidated')) {
+            handleContextError(new Error('Extension context invalidated'));
+          }
+          finish(!isStopped && response?.error == null);
+          return;
+        }
+        downloadResolvers.set(response.downloadId, finish);
+      });
+    } catch (e) {
+      if (handleContextError(e)) { finish(false); return; }
+      log('downloadWithSemaphore error:', e); finish(false);
+    }
   });
 }
 
@@ -2141,11 +2227,8 @@ async function downloadMetadata(folderName, unit, totalPages, titleRaw, archNum)
   if (pageMeta) lines.push('', '── Реквизиты дела ──', pageMeta);
 
   const encoded = 'data:text/plain;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
-  chrome.runtime.sendMessage({
-    type:     'DOWNLOAD',
-    url:      encoded,
-    filename: `${folderName}/_meta.txt`
-  });
+  try { safeSendMessage({ type: 'DOWNLOAD', url: encoded, filename: `${folderName}/_meta.txt` }); }
+  catch (e) { if (!handleContextError(e)) console.warn('[RAD] downloadMetadata:', e); }
 }
 
 function downloadErrorLog(folderName, failedPages) {
@@ -2157,11 +2240,8 @@ function downloadErrorLog(folderName, failedPages) {
     'Попробуйте скачать эти страницы вручную или выставьте диапазон в расширении.'
   ];
   const encoded = 'data:text/plain;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
-  chrome.runtime.sendMessage({
-    type:     'DOWNLOAD',
-    url:      encoded,
-    filename: `${folderName}/_errors.txt`
-  });
+  try { safeSendMessage({ type: 'DOWNLOAD', url: encoded, filename: `${folderName}/_errors.txt` }); }
+  catch (e) { if (!handleContextError(e)) console.warn('[RAD] downloadErrorLog:', e); }
 }
 
 // ── История загрузок ──────────────────────────────────────────────────────────
@@ -3077,7 +3157,7 @@ async function downloadAllCgamosSpa(overrideFrom = null, overrideTo = null) {
           ? `${folderName}/${pad(p, padWidth)}.jpg`
           : `cgamos_${docId}_p${pad(p, padWidth)}.jpg`;
 
-        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+        try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
         throttle.onSuccess();
       } catch (e) {
         if (e.message === 'stopped') throw e;
@@ -3406,7 +3486,7 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
           const dataUrl = await waitForVrrCanvasRender(canvas, prevFingerprint);
           prevFingerprint = getVrrCanvasFingerprint(canvas);
 
-          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+          try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
           throttle.onSuccess();
           await sleep(300);
         } catch (e) {
@@ -3456,9 +3536,11 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
 
 async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
+  if (!isExtensionContextValid()) { showContextInvalidatedHint(); console.warn('[RAD] downloadAllARSVO blocked: context invalidated'); return; }
   isRunning = true; isPaused = false; isStopped = false;
 
-  const cfg    = await ensureSettings();
+  let cfg;
+  try { cfg = await ensureSettings(); } catch (e) { if (handleContextError(e)) { isRunning=false; setIcon('inactive'); return; } throw e; }
   const guid   = getArsvoGuid();
   const unitId = getArsvoUnitId() || (guid ? guid.replace(/-/g, '').slice(0, 12) : null);
 
@@ -3533,7 +3615,7 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
         try {
           const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(t));
           if (dataUrl) {
-            chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+            try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
             throttle.onSuccess();
             await sleep(400);
           } else {
@@ -3566,7 +3648,10 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
       timestamp: Date.now(), url: location.href, format: 'jpg' });
 
   } catch (e) {
-    if (e.message === 'stopped') sendDone('Остановлено');
+    if (handleContextError(e) || isContextInvalidatedError(e)) {
+      console.warn('[RAD] downloadAllЭЛАР прерван: context invalidated');
+      try { sendDone('Ошибка: расширение было обновлено — перезагрузите страницу (Ctrl+R) и запустите заново'); } catch {}
+    } else if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAllЭЛАР:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
     _clearPDFCache();
@@ -3694,7 +3779,7 @@ async function downloadAllYandex(overrideFrom = null, overrideTo = null) {
           ? `${folderName}/${pad(p, padWidth)}.jpg`
           : `ya_${docId}_p${pad(p, padWidth)}.jpg`;
 
-        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl, filename });
+        try { safeSendMessage({ type: 'DOWNLOAD', url: imageUrl, filename  }); } catch (e) { if (handleContextError(e)) throw e; }
         throttle.onSuccess();
       } catch (e) {
         if (e.message === 'stopped') throw e;
@@ -3778,7 +3863,7 @@ async function downloadAllCgamos(overrideFrom = null, overrideTo = null) {
           try {
             const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(t));
             if (dataUrl) {
-              chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+              try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
               throttle.onSuccess();
               await sleep(400);
             } else {
@@ -3885,14 +3970,14 @@ async function downloadCurrent() {
       : `unit_${adapter.unitId}_p${pad(pageNum, 3)}.jpg`;
 
     if (_vrrDirectPrefix) {
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: vrrDirectImageUrl(adapter.unitId, offset), filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: vrrDirectImageUrl(adapter.unitId, offset), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`Скачана стр. ${pageNum}`);
     } else {
       const cv = getVrrCanvas();
       if (!cv) { sendStatus('VRR: canvas не найден'); return; }
       const dataUrl = cv.toDataURL('image/jpeg', 0.95);
       if (!dataUrl || dataUrl.length < 5000) { sendStatus('VRR: страница ещё не загружена'); return; }
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`Скачана стр. ${pageNum} (canvas)`);
     }
 
@@ -3906,24 +3991,24 @@ async function downloadCurrent() {
     // Penza/ELAR tiled viewer: current page must be stitched from tiles for full resolution.
     // ImageFilePart.ashx returns only a low-res preview ("эскиз"), so prefer tiled path.
     if (isElarSingleTileMode()) {
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`Скачана стр. ${p}`);
     } else {
       try {
         sendStatus(`ЭЛАР: сшивка стр. ${p}…`);
         const dataUrl = await stitchArsvoPageOnCanvas(adapter.guid, p - 1, t => sendStatus(t));
         if (dataUrl) {
-          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+          try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
           sendStatus(`Скачана стр. ${p} (тайлы)`);
         } else {
           // fallback to legacy low-res URL if stitch not applicable
-          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+          try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
           sendStatus(`Скачана стр. ${p} (резерв)`);
         }
       } catch (e) {
         if (e.message === 'stopped') throw e;
         console.warn('[RAD] arsvo current stitch failed, fallback:', e);
-        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+        try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
         sendStatus(`Скачана стр. ${p} (резерв: ${e.message})`);
       }
     }
@@ -3937,7 +4022,7 @@ async function downloadCurrent() {
       : `ya_${adapter.unitId}_p${pad(curPage, 3)}.jpg`;
     const domResult = extractBestImageFromLiveDom();
     if (domResult && domResult.url) {
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: domResult.url, filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: domResult.url, filename  }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`Яндекс Архив: скачана стр. ${curPage}${domResult.isCanvas ? ' (canvas)' : ''}`);
     } else {
       sendStatus('Яндекс Архив: изображение не найдено. Дождитесь полной загрузки скана.');
@@ -3952,7 +4037,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `cgamos_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus(`ЦГА Москвы: скачана стр. ${p}`);
 
   } else if (adapter.type === 'kaisa') {
@@ -3965,7 +4050,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(curPage, 3)}.jpg`
       : `kaisa_${adapter.unitId}_p${pad(curPage, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: kaisaAbsUrl(img), filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: kaisaAbsUrl(img), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus(`КАИСА: скачана стр. ${curPage}`);
 
   } else if (adapter.type === 'cgamos-arsvo') {
@@ -3976,22 +4061,22 @@ async function downloadCurrent() {
       ? `${folder}/${pad(p, 3)}.jpg`
       : `cgamos_${adapter.unitId}_p${pad(p, 3)}.jpg`;
     if (isElarSingleTileMode()) {
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`ЦГА Москвы: скачана стр. ${p}`);
     } else {
       try {
         sendStatus(`ЦГА: сшивка стр. ${p}…`);
         const dataUrl = await stitchArsvoPageOnCanvas(adapter.guid, p - 1, t => sendStatus(t));
         if (dataUrl) {
-          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+          try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
           sendStatus(`ЦГА Москвы: скачана стр. ${p} (тайлы)`);
         } else {
-          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+          try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
           sendStatus(`ЦГА Москвы: скачана стр. ${p} (резерв)`);
         }
       } catch (e) {
         if (e.message === 'stopped') throw e;
-        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
+        try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
         sendStatus(`ЦГА Москвы: скачана стр. ${p} (резерв)`);
       }
     }
@@ -4005,7 +4090,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/page_current.jpg`
       : `cgamos_${adapter.unitId}_current.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: img.url, filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: img.url, filename  }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus('ЦГА Москвы: скачана текущая страница');
 
   } else {
@@ -4016,7 +4101,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `unit_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(adapter.unitId, archNum, p), filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: imageUrl(adapter.unitId, archNum, p), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus(`Скачана стр. ${p}`);
   }
 
@@ -4026,6 +4111,7 @@ async function downloadCurrent() {
 // ── Обработчик сообщений от popup / background ────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!isExtensionContextValid()) { console.warn('[RAD] onMessage ignored: context invalidated'); return; }
   if (!msg?.type) return;
 
   switch (msg.type) {
@@ -4163,7 +4249,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // ── Инициализация ─────────────────────────────────────────────────────────────
 
 ensureSettings().then(async () => {
-  sweepOldResumeStates().catch(() => {});
+  try { await sweepOldResumeStates(); } catch {}
 
   try {
     const adapter = getAdapterInfo();
@@ -4181,8 +4267,9 @@ ensureSettings().then(async () => {
       setIcon('inactive');
     }
   } catch (e) {
-    log('init error:', e); setIcon('inactive');
+    if (!handleContextError(e)) log('init error:', e);
+    try { setIcon('inactive'); } catch {}
   }
-});
+}).catch(e => { if (!handleContextError(e)) console.warn('[RAD] ensureSettings init:', e); });
 
 log('content-script loaded — Regional Archive Downloader v3.0.1');
