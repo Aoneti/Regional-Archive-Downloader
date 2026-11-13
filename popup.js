@@ -1234,8 +1234,11 @@ chrome.runtime.onMessage.addListener(msg => {
       const resumePg = rs.lastPage + 1;
       if (resumePg > 1 && resumePg <= rangeMax) { fromPage = resumePg; updateRangeUI(); }
       setStatus(`↩ Прервано на стр. ${rs.lastPage} из ${rs.totalPages} (${ageMin} мин. назад) — двойной клик по слайдеру для сброса`);
-    } else if (state.currentPage && state.currentPage > 1) {
-      fromPage = state.currentPage; updateRangeUI();
+    } else if (state.currentPage && state.currentPage > 1 && !state.isRunning) {
+      // Открытая страница НЕ сужает диапазон: «Скачать документ» и PDF всегда
+      // берут дело целиком (или явно заданный шкалой диапазон). Иначе, открыв
+      // дело на 2-й странице, пользователь получал бы только её.
+      setStatus(`Открыта стр. ${state.currentPage} — качаем весь документ (диапазон — шкалой)`);
     }
 
     if (state.isRunning) {
