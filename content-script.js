@@ -17,10 +17,21 @@ let settingsCache = null;
 
 function getSettings() {
   return new Promise(resolve => {
-    chrome.storage.sync.get(DEFAULTS, items => {
-      settingsCache = Object.assign({}, DEFAULTS, items || {});
-      resolve(settingsCache);
-    });
+    try {
+      if (!isExtensionContextValid()) {
+        settingsCache = Object.assign({}, DEFAULTS);
+        resolve(settingsCache); return;
+      }
+      chrome.storage.sync.get(DEFAULTS, items => {
+        const err = chrome.runtime.lastError;
+        if (err) { settingsCache = Object.assign({}, DEFAULTS, items || {}); resolve(settingsCache); return; }
+        settingsCache = Object.assign({}, DEFAULTS, items || {});
+        resolve(settingsCache);
+      });
+    } catch (e) {
+      if (handleContextError(e)) { settingsCache = Object.assign({}, DEFAULTS); resolve(settingsCache); }
+      else { settingsCache = Object.assign({}, DEFAULTS); resolve(settingsCache); }
+    }
   });
 }
 
@@ -29,12 +40,14 @@ async function ensureSettings() {
   return settingsCache;
 }
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync') {
-    settingsCache = null;
-    log('settings cache invalidated');
-  }
-});
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync') {
+      settingsCache = null;
+      log('settings cache invalidated');
+    }
+  });
+} catch (e) { if (!String(e.message||'').includes('Extension context invalidated')) throw e; }
 
 // ── Константы ─────────────────────────────────────────────────────────────────
 
@@ -366,22 +379,72 @@ async function waitIfPaused() {
 }
 
 // ── Хелперы общения с background/popup ───────────────────────────────────────
+function isExtensionContextValid() {
+  try { return !!(chrome.runtime && chrome.runtime.id); } catch { return false; }
+}
+function isContextInvalidatedError(e) {
+  return e && typeof e.message === 'string' && e.message.includes('Extension context invalidated');
+}
+function showContextInvalidatedHint() {
+  // Fallback DOM banner when background is gone (extension reloaded/updated)
+  if (document.getElementById('rad-context-hint')) return;
+  const d = document.createElement('div');
+  d.id = 'rad-context-hint';
+  d.textContent = 'RAD: расширение было обновлено — перезагрузите страницу (Ctrl+R) и запустите загрузку заново.';
+  Object.assign(d.style, {
+    position:'fixed', top:'12px', left:'50%', transform:'translateX(-50%)',
+    background:'#d32f2f', color:'#fff', padding:'10px 18px', borderRadius:'8px',
+    zIndex:'2147483647', fontSize:'13px', fontFamily:'sans-serif',
+    boxShadow:'0 4px 12px rgba(0,0,0,0.3)', maxWidth:'90vw', textAlign:'center'
+  });
+  document.body?.appendChild(d);
+  setTimeout(()=> d.remove(), 8000);
+}
+function safeSendMessage(msg, callback) {
+  if (!isExtensionContextValid()) {
+    const e = new Error('Extension context invalidated');
+    e.isContextInvalidated = true;
+    throw e;
+  }
+  try {
+    if (typeof callback === 'function') chrome.runtime.sendMessage(msg, callback);
+    else chrome.runtime.sendMessage(msg, () => { void chrome.runtime.lastError; });
+  } catch (e) {
+    if (isContextInvalidatedError(e)) { e.isContextInvalidated = true; throw e; }
+    throw e;
+  }
+}
+function handleContextError(e) {
+  if (e && (e.isContextInvalidated || isContextInvalidatedError(e))) {
+    console.warn('[RAD] Extension context invalidated — перезагрузите страницу');
+    showContextInvalidatedHint();
+    return true;
+  }
+  return false;
+}
 function sendStatus(text) {
-  chrome.runtime.sendMessage({ type: 'STATUS', text });
+  try { safeSendMessage({ type: 'STATUS', text }); } catch (e) { if (!handleContextError(e)) console.warn('[RAD] sendStatus:', e); }
 }
-
 function sendProgress(cur, total) {
-  const percent = total > 0 ? Math.round((cur / total) * 100) : 0;
-  chrome.runtime.sendMessage({ type: 'PROGRESS', percent, current: cur, total });
+  try {
+    const percent = total > 0 ? Math.round((cur / total) * 100) : 0;
+    safeSendMessage({ type: 'PROGRESS', percent, current: cur, total });
+  } catch (e) { if (!handleContextError(e)) console.warn('[RAD] sendProgress:', e); }
 }
-
 function sendDone(text, extra = {}) {
-  chrome.runtime.sendMessage({ type: 'DONE', text, ...extra });
+  try { safeSendMessage({ type: 'DONE', text, ...extra }); } catch (e) { if (!handleContextError(e)) console.warn('[RAD] sendDone:', e); }
 }
-
 function setIcon(state) {
-  chrome.runtime.sendMessage({ type: 'SET_ICON', state });
+  try { safeSendMessage({ type: 'SET_ICON', state }); } catch (e) { if (!handleContextError(e)) log('setIcon:', e); }
 }
+// Глобально глушим шум от уже убитого контекста — не засоряем консоль пользователя
+window.addEventListener('unhandledrejection', ev => {
+  const msg = String(ev.reason && ev.reason.message || ev.reason || '');
+  if (msg.includes('Extension context invalidated')) { ev.preventDefault(); console.warn('[RAD] подавлен unhandledrejection: context invalidated'); }
+});
+window.addEventListener('error', ev => {
+  if (String(ev.message || '').includes('Extension context invalidated')) { /* не ломаем страницу */ }
+});
 
 // ── Утилиты DOM / URL ─────────────────────────────────────────────────────────
 function getUnitId() {
@@ -763,17 +826,31 @@ const ARSVO_GUID_SEL =
   '#MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_fileId';
 
 function isArsvoPage() {
-  if (document.querySelector(ARSVO_GUID_SEL)?.value?.includes('-')) return true;
-  if (document.getElementById('storageFilesViewerPnl')) return true;
-  return !!(
-    document.querySelector('img[src*="ImageFile.ashx"][src*="id="]') ||
-    document.querySelector('img[src*="ImageFile.ashx"][src*="Id="]') ||
-    document.querySelector('img[src*="ImageFilePart.ashx"]')
-  );
+  const guidEl = document.querySelector(ARSVO_GUID_SEL);
+  if (guidEl?.value?.includes('-')) return true;
+  const hiddenGuid = document.querySelector('input[type="hidden"][id*="_h_fileId"]');
+  if (hiddenGuid?.value?.match(/^[0-9a-f-]{36}$/i)) return true;
+  const hasTile = document.querySelector('img[src*="ImageFile.ashx"][src*="id="]') ||
+                  document.querySelector('img[src*="ImageFile.ashx"][src*="Id="]') ||
+                  document.querySelector('img[src*="ImageFilePart.ashx"]');
+  if (hasTile) {
+    // Search page may contain thumbnails via same endpoint — require that we can extract a GUID
+    // and that viewer panel is actually populated (not empty Search.aspx placeholder)
+    const imgGuid = getArsvoGuid();
+    if (imgGuid) return true;
+  }
+  return false;
 }
 function isElarPage() {
-  return !!(document.getElementById('storageFilesViewerPnl') ||
-            document.querySelector('[id$="ForwardBtn"]'));
+  const pnl = document.getElementById('storageFilesViewerPnl');
+  if (pnl) {
+    const hasGuid = !!pnl.querySelector('input[id*="_h_fileId"][value*="-"]');
+    const hasImg  = !!pnl.querySelector('img[src*="ImageFile"]');
+    const hasNav  = !!pnl.querySelector('[id$="ForwardBtn"]') || !!pnl.querySelector('[id$="BackBtn"]');
+    // Panel alone is not enough — on Search.aspx it exists empty; require real content
+    if (hasGuid || hasImg || hasNav) return true;
+  }
+  return !!document.querySelector('[id$="ForwardBtn"]');
 }
 
 function getArsvoUnitId() {
@@ -855,10 +932,17 @@ function getArsvoCurrentPage() {
 function getArsvoTotalPagesFromDOM() {
   const hiddenSels = [
     '#MainPlaceHolder_StorageFilesViewerControl_h_pagesCount',
+    '#MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_totalPages',
+    '#MainPlaceHolder_StorageFilesViewerControl_h_totalPages',
     'input[id$="_h_pagesCount"]',
+    'input[id$="_h_totalPages"]',
+    'input[id*="h_totalPages"]',
+    'input[id*="h_pagesCount"]',
     'input[id*="PagesCount"]',
     'input[id*="pagesCount"]',
     'input[id*="TotalPages"]',
+    'input[id*="totalPages"]',
+    'input[id*="_h_pageNumber"]',
     'span[id*="lbPagesCount"]',
     'span[id*="TotalPages"]',
     '[id*="TotalCount"]',
@@ -872,6 +956,18 @@ function getArsvoTotalPagesFromDOM() {
     const raw = el.value !== undefined ? el.value : el.textContent;
     const n   = parseInt(raw);
     if (!isNaN(n) && n > 0) return n;
+  }
+
+  // Penza and some ELAR instances use FilesDropDownList where each option is a file.
+  // For multi-page documents inside one file, pages are counted via tiles, not dropdown.
+  // But for single-image docs the dropdown may be the only hint that pages exist.
+  // We only trust dropdown as floor, not authoritative total — real probing happens later.
+  // However if hidden counts are 0 and we see a dropdown with many files, treat largest number.
+  const ddl = document.getElementById('MainPlaceHolder_StorageFilesViewerControl_FilesDropDownList')
+           || document.querySelector('select[id*="FilesDropDownList"]');
+  if (ddl && ddl.options && ddl.options.length > 1) {
+    const n = ddl.options.length;
+    if (n > 1 && n < 50000) return n;
   }
 
   for (const el of document.querySelectorAll('span, td, label')) {
@@ -908,6 +1004,20 @@ function elarSingleTileUrl(guid, pageIndex) {
   return `${location.origin}/Pages/ImageFile.ashx?level=12&x=0&y=0&tileSize=999999&tileOverlap=1&id=${guid}&page=${pageIndex}&rotation=0&searchtext=`;
 }
 
+function getArsvoImageDimensions() {
+  // Penza viewer stores real image size in hidden inputs DeepZoomImageViewer_h_width/_height
+  const wEl = document.getElementById('MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_width')
+           || document.querySelector('input[id*="_h_width"]');
+  const hEl = document.getElementById('MainPlaceHolder_StorageFilesViewerControl_DeepZoomImageViewer_h_height')
+           || document.querySelector('input[id*="_h_height"]');
+  if (wEl && hEl) {
+    const w = parseInt(wEl.value);
+    const h = parseInt(hEl.value);
+    if (w > 0 && h > 0) return { width: w, height: h };
+  }
+  return null;
+}
+
 function getArsvoTileParams() {
   const img = document.querySelector('img[src*="ImageFile.ashx"][src*="level="]');
   if (!img) {
@@ -920,6 +1030,30 @@ function getArsvoTileParams() {
   const tileSize= parseInt(src.match(/[?&]tileSize=(\d+)/)?.[1])    || 800;
   const overlap = parseInt(src.match(/[?&]tileOverlap=(\d+)/)?.[1]) || 1;
   return { level, tileSize, overlap };
+}
+
+async function fetchTileBlob(url) {
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  if (!blob || blob.size < 100) return null;
+  return blob;
+}
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
+
+async function fetchTileAsImage(url) {
+  const blob = await fetchTileBlob(url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now());
+  if (!blob) return null;
+  try { return await loadImageFromBlob(blob); } catch { return null; }
 }
 
 const ARSVO_TILE_MIN_BYTES = 3000;
@@ -979,43 +1113,70 @@ async function stitchArsvoPageOnCanvas(guid, pageIndex, progressCb) {
   const { cols, rows } = await probeArsvoTileGrid(guid, pageIndex, level, tileSize, overlap);
   if (cols === 0 || rows === 0) return null;
 
+  // Prefer real image dimensions from hidden inputs (Penza: 16384x11760) to crop overlap artefacts.
+  // Fallback is cols*tileSize which may be slightly larger but still usable.
+  const dims = getArsvoImageDimensions();
+  const canvasW = dims ? dims.width  : cols * tileSize;
+  const canvasH = dims ? dims.height : rows * tileSize;
+
   const canvas = document.createElement('canvas');
-  canvas.width  = cols * tileSize;
-  canvas.height = rows * tileSize;
+  canvas.width  = canvasW;
+  canvas.height = canvasH;
   const ctx = canvas.getContext('2d');
 
   let loaded = 0;
   let failed = 0;
   const total = cols * rows;
 
-  await Promise.all(
-    Array.from({ length: rows }, (_, y) =>
-      Array.from({ length: cols }, (_, x) =>
-        new Promise(resolve => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            ctx.drawImage(img, x * tileSize, y * tileSize);
-            loaded++;
-            progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
-            resolve();
-          };
-          img.onerror = () => {
-            failed++;
-            progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
-            resolve();
-          };
-          img.src = arsvoTileUrl(guid, pageIndex, level, x, y, tileSize, overlap) + '&_ts=' + Date.now();
-        })
-      )
-    ).flat()
-  );
+  // Concurrency control for tile fetches — avoid firing 300 fetches at once.
+  const CONCURRENCY = 12;
+  const tasks = [];
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) tasks.push({ x, y });
+  }
+
+  let idx = 0;
+  async function worker() {
+    while (true) {
+      if (isStopped) return;
+      const t = tasks[idx++];
+      if (!t) return;
+      const url = arsvoTileUrl(guid, pageIndex, level, t.x, t.y, tileSize, overlap);
+      try {
+        const img = await fetchTileAsImage(url);
+        if (img) {
+          // Draw with overlap correction: logical tile origin is x*(tileSize-overlap) except first row/col.
+          // Penza uses tileOverlap=1, so step is tileSize. Using tileSize step works for fetch tiles
+          // but last row/col may extend beyond canvas — clipping via dest clipping handles it.
+          const dx = t.x * tileSize;
+          const dy = t.y * tileSize;
+          // Clip to canvas bounds for last tiles that exceed dims
+          const dw = Math.min(img.naturalWidth  || tileSize, canvasW - dx);
+          const dh = Math.min(img.naturalHeight || tileSize, canvasH - dy);
+          if (dw > 0 && dh > 0) {
+            // If source tile larger than remaining canvas (due to overlap), crop source too
+            ctx.drawImage(img, 0, 0, dw, dh, dx, dy, dw, dh);
+          }
+          loaded++;
+          progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
+        } else {
+          failed++;
+          progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
+        }
+      } catch (e) {
+        failed++;
+        progressCb?.(`ЭЛАР: тайл ${loaded + failed}/${total} (стр. ${pageIndex + 1})`);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()));
 
   if (isStopped) throw new Error('stopped');
   if (failed > total / 2) {
     throw new Error(
       `ЭЛАР: стр. ${pageIndex + 1} — ${failed}/${total} тайлов не загружены` +
-      (failed === total ? ' (возможно CORS-блокировка)' : '')
+      (failed === total ? ' (возможно CORS-блокировка или сессия истекла)' : '')
     );
   }
 
@@ -1967,14 +2128,23 @@ async function downloadWithSemaphore(url, filename) {
       finish(false);
     }, DOWNLOAD_TIMEOUT_MS);
 
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename }, (response) => {
-      void chrome.runtime.lastError;
-      if (isStopped || response?.error != null || response?.downloadId == null) {
-        finish(!isStopped && response?.error == null);
-        return;
-      }
-      downloadResolvers.set(response.downloadId, finish);
-    });
+    try {
+      if (!isExtensionContextValid()) { finish(false); if (handleContextError(new Error('Extension context invalidated'))) {} return; }
+      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, filename }, (response) => {
+        void chrome.runtime.lastError;
+        if (isStopped || response?.error != null || response?.downloadId == null) {
+          if (chrome.runtime.lastError && String(chrome.runtime.lastError.message||'').includes('Extension context invalidated')) {
+            handleContextError(new Error('Extension context invalidated'));
+          }
+          finish(!isStopped && response?.error == null);
+          return;
+        }
+        downloadResolvers.set(response.downloadId, finish);
+      });
+    } catch (e) {
+      if (handleContextError(e)) { finish(false); return; }
+      log('downloadWithSemaphore error:', e); finish(false);
+    }
   });
 }
 
@@ -2057,11 +2227,8 @@ async function downloadMetadata(folderName, unit, totalPages, titleRaw, archNum)
   if (pageMeta) lines.push('', '── Реквизиты дела ──', pageMeta);
 
   const encoded = 'data:text/plain;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
-  chrome.runtime.sendMessage({
-    type:     'DOWNLOAD',
-    url:      encoded,
-    filename: `${folderName}/_meta.txt`
-  });
+  try { safeSendMessage({ type: 'DOWNLOAD', url: encoded, filename: `${folderName}/_meta.txt` }); }
+  catch (e) { if (!handleContextError(e)) console.warn('[RAD] downloadMetadata:', e); }
 }
 
 function downloadErrorLog(folderName, failedPages) {
@@ -2073,11 +2240,8 @@ function downloadErrorLog(folderName, failedPages) {
     'Попробуйте скачать эти страницы вручную или выставьте диапазон в расширении.'
   ];
   const encoded = 'data:text/plain;charset=utf-8,' + encodeURIComponent(lines.join('\n'));
-  chrome.runtime.sendMessage({
-    type:     'DOWNLOAD',
-    url:      encoded,
-    filename: `${folderName}/_errors.txt`
-  });
+  try { safeSendMessage({ type: 'DOWNLOAD', url: encoded, filename: `${folderName}/_errors.txt` }); }
+  catch (e) { if (!handleContextError(e)) console.warn('[RAD] downloadErrorLog:', e); }
 }
 
 // ── История загрузок ──────────────────────────────────────────────────────────
@@ -2883,13 +3047,24 @@ async function generatePDFCgamosArsvo(guid, unitId, overrideFrom, overrideTo) {
           } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
         } else {
           try {
-            const res = await fetch(arsvoImageUrl(guid, p - 1));
-            if (res.ok) {
-              bytes = new Uint8Array(await res.arrayBuffer());
+            const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(`PDF/ЦГА: ${t}`));
+            if (dataUrl) {
+              bytes = dataUrlToBytes(dataUrl);
               imgCachePut(unitId, p, bytes);
               throttle.onSuccess();
-            } else { throttle.onRateLimit(res.status); failedNums.add(p); }
-          } catch (e) { log('PDF/ЦГА fetch error p' + p, e); failedNums.add(p); }
+            } else {
+              // fallback to ImageFilePart if stitch returns null
+              const res = await fetch(arsvoImageUrl(guid, p - 1));
+              if (res.ok) {
+                bytes = new Uint8Array(await res.arrayBuffer());
+                imgCachePut(unitId, p, bytes);
+                throttle.onSuccess();
+              } else { throttle.onRateLimit(res.status); failedNums.add(p); }
+            }
+          } catch (e) {
+            if (e.message==='stopped') throw e;
+            log('PDF/ЦГА stitch error p' + p, e); failedNums.add(p);
+          }
         }
       }
 
@@ -2982,7 +3157,7 @@ async function downloadAllCgamosSpa(overrideFrom = null, overrideTo = null) {
           ? `${folderName}/${pad(p, padWidth)}.jpg`
           : `cgamos_${docId}_p${pad(p, padWidth)}.jpg`;
 
-        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+        try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
         throttle.onSuccess();
       } catch (e) {
         if (e.message === 'stopped') throw e;
@@ -3311,7 +3486,7 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
           const dataUrl = await waitForVrrCanvasRender(canvas, prevFingerprint);
           prevFingerprint = getVrrCanvasFingerprint(canvas);
 
-          chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+          try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
           throttle.onSuccess();
           await sleep(300);
         } catch (e) {
@@ -3361,9 +3536,11 @@ async function downloadAllVRR(overrideFrom = null, overrideTo = null) {
 
 async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
   if (isRunning) return;
+  if (!isExtensionContextValid()) { showContextInvalidatedHint(); console.warn('[RAD] downloadAllARSVO blocked: context invalidated'); return; }
   isRunning = true; isPaused = false; isStopped = false;
 
-  const cfg    = await ensureSettings();
+  let cfg;
+  try { cfg = await ensureSettings(); } catch (e) { if (handleContextError(e)) { isRunning=false; setIcon('inactive'); return; } throw e; }
   const guid   = getArsvoGuid();
   const unitId = getArsvoUnitId() || (guid ? guid.replace(/-/g, '').slice(0, 12) : null);
 
@@ -3438,7 +3615,7 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
         try {
           const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(t));
           if (dataUrl) {
-            chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+            try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
             throttle.onSuccess();
             await sleep(400);
           } else {
@@ -3471,7 +3648,10 @@ async function downloadAllARSVO(overrideFrom = null, overrideTo = null) {
       timestamp: Date.now(), url: location.href, format: 'jpg' });
 
   } catch (e) {
-    if (e.message === 'stopped') sendDone('Остановлено');
+    if (handleContextError(e) || isContextInvalidatedError(e)) {
+      console.warn('[RAD] downloadAllЭЛАР прерван: context invalidated');
+      try { sendDone('Ошибка: расширение было обновлено — перезагрузите страницу (Ctrl+R) и запустите заново'); } catch {}
+    } else if (e.message === 'stopped') sendDone('Остановлено');
     else { console.error('[RAD] downloadAllЭЛАР:', e); sendDone('Ошибка: ' + e.message); }
   } finally {
     _clearPDFCache();
@@ -3599,7 +3779,7 @@ async function downloadAllYandex(overrideFrom = null, overrideTo = null) {
           ? `${folderName}/${pad(p, padWidth)}.jpg`
           : `ya_${docId}_p${pad(p, padWidth)}.jpg`;
 
-        chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl, filename });
+        try { safeSendMessage({ type: 'DOWNLOAD', url: imageUrl, filename  }); } catch (e) { if (handleContextError(e)) throw e; }
         throttle.onSuccess();
       } catch (e) {
         if (e.message === 'stopped') throw e;
@@ -3675,12 +3855,26 @@ async function downloadAllCgamos(overrideFrom = null, overrideTo = null) {
           ? `${folderName}/${pad(p, padWidth)}.jpg`
           : `cgamos_${docId}_p${pad(p, padWidth)}.jpg`;
 
-        const success = await downloadWithSemaphore(arsvoImageUrl(guid, p - 1), filename);
-        if (!success) {
-          failedPages.push(p);
-          if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+        if (isElarSingleTileMode()) {
+          const success = await downloadWithSemaphore(elarSingleTileUrl(guid, p - 1), filename);
+          if (!success) { failedPages.push(p); if (cfg.adaptiveSpeed) throttle.onRateLimit(0); } else throttle.onSuccess();
         } else {
-          throttle.onSuccess();
+          // Use tiled stitch for full resolution if viewer is tiled (some CGAMOS docs use ELAR viewer with tiles)
+          try {
+            const dataUrl = await stitchArsvoPageOnCanvas(guid, p - 1, t => sendStatus(t));
+            if (dataUrl) {
+              try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
+              throttle.onSuccess();
+              await sleep(400);
+            } else {
+              const success = await downloadWithSemaphore(arsvoImageUrl(guid, p - 1), filename);
+              if (!success) failedPages.push(p); else throttle.onSuccess();
+            }
+          } catch (e) {
+            if (e.message === 'stopped') throw e;
+            log('ЦГА stitch error p'+p,e); failedPages.push(p);
+            if (cfg.adaptiveSpeed) throttle.onRateLimit(0);
+          }
         }
 
         if (p % 10 === 0) saveResumeState(docId, { lastPage: p, totalPages, folderName, fromPage: pFrom });
@@ -3776,14 +3970,14 @@ async function downloadCurrent() {
       : `unit_${adapter.unitId}_p${pad(pageNum, 3)}.jpg`;
 
     if (_vrrDirectPrefix) {
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: vrrDirectImageUrl(adapter.unitId, offset), filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: vrrDirectImageUrl(adapter.unitId, offset), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`Скачана стр. ${pageNum}`);
     } else {
       const cv = getVrrCanvas();
       if (!cv) { sendStatus('VRR: canvas не найден'); return; }
       const dataUrl = cv.toDataURL('image/jpeg', 0.95);
       if (!dataUrl || dataUrl.length < 5000) { sendStatus('VRR: страница ещё не загружена'); return; }
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`Скачана стр. ${pageNum} (canvas)`);
     }
 
@@ -3794,8 +3988,30 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `unit_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
-    sendStatus(`Скачана стр. ${p}`);
+    // Penza/ELAR tiled viewer: current page must be stitched from tiles for full resolution.
+    // ImageFilePart.ashx returns only a low-res preview ("эскиз"), so prefer tiled path.
+    if (isElarSingleTileMode()) {
+      try { safeSendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
+      sendStatus(`Скачана стр. ${p}`);
+    } else {
+      try {
+        sendStatus(`ЭЛАР: сшивка стр. ${p}…`);
+        const dataUrl = await stitchArsvoPageOnCanvas(adapter.guid, p - 1, t => sendStatus(t));
+        if (dataUrl) {
+          try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
+          sendStatus(`Скачана стр. ${p} (тайлы)`);
+        } else {
+          // fallback to legacy low-res URL if stitch not applicable
+          try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
+          sendStatus(`Скачана стр. ${p} (резерв)`);
+        }
+      } catch (e) {
+        if (e.message === 'stopped') throw e;
+        console.warn('[RAD] arsvo current stitch failed, fallback:', e);
+        try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
+        sendStatus(`Скачана стр. ${p} (резерв: ${e.message})`);
+      }
+    }
 
   } else if (adapter.type === 'yandex') {
     const curPage  = getYandexArchiveCurrentPage();
@@ -3806,7 +4022,7 @@ async function downloadCurrent() {
       : `ya_${adapter.unitId}_p${pad(curPage, 3)}.jpg`;
     const domResult = extractBestImageFromLiveDom();
     if (domResult && domResult.url) {
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: domResult.url, filename });
+      try { safeSendMessage({ type: 'DOWNLOAD', url: domResult.url, filename  }); } catch (e) { if (handleContextError(e)) throw e; }
       sendStatus(`Яндекс Архив: скачана стр. ${curPage}${domResult.isCanvas ? ' (canvas)' : ''}`);
     } else {
       sendStatus('Яндекс Архив: изображение не найдено. Дождитесь полной загрузки скана.');
@@ -3821,7 +4037,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `cgamos_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: dataUrl, filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus(`ЦГА Москвы: скачана стр. ${p}`);
 
   } else if (adapter.type === 'kaisa') {
@@ -3834,7 +4050,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(curPage, 3)}.jpg`
       : `kaisa_${adapter.unitId}_p${pad(curPage, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: kaisaAbsUrl(img), filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: kaisaAbsUrl(img), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus(`КАИСА: скачана стр. ${curPage}`);
 
   } else if (adapter.type === 'cgamos-arsvo') {
@@ -3844,8 +4060,26 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `cgamos_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename });
-    sendStatus(`ЦГА Москвы: скачана стр. ${p}`);
+    if (isElarSingleTileMode()) {
+      try { safeSendMessage({ type: 'DOWNLOAD', url: elarSingleTileUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
+      sendStatus(`ЦГА Москвы: скачана стр. ${p}`);
+    } else {
+      try {
+        sendStatus(`ЦГА: сшивка стр. ${p}…`);
+        const dataUrl = await stitchArsvoPageOnCanvas(adapter.guid, p - 1, t => sendStatus(t));
+        if (dataUrl) {
+          try { safeSendMessage({ type: 'DOWNLOAD', url: dataUrl, filename }); } catch (e) { if (handleContextError(e)) throw e; }
+          sendStatus(`ЦГА Москвы: скачана стр. ${p} (тайлы)`);
+        } else {
+          try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
+          sendStatus(`ЦГА Москвы: скачана стр. ${p} (резерв)`);
+        }
+      } catch (e) {
+        if (e.message === 'stopped') throw e;
+        try { safeSendMessage({ type: 'DOWNLOAD', url: arsvoImageUrl(adapter.guid, p - 1), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
+        sendStatus(`ЦГА Москвы: скачана стр. ${p} (резерв)`);
+      }
+    }
 
   } else if (adapter.type === 'cgamos-dom') {
     const pageImgs = collectCgamosPageImageUrls();
@@ -3856,7 +4090,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/page_current.jpg`
       : `cgamos_${adapter.unitId}_current.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: img.url, filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: img.url, filename  }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus('ЦГА Москвы: скачана текущая страница');
 
   } else {
@@ -3867,7 +4101,7 @@ async function downloadCurrent() {
     const filename = cfg.createFolders
       ? `${folder}/${pad(p, 3)}.jpg`
       : `unit_${adapter.unitId}_p${pad(p, 3)}.jpg`;
-    chrome.runtime.sendMessage({ type: 'DOWNLOAD', url: imageUrl(adapter.unitId, archNum, p), filename });
+    try { safeSendMessage({ type: 'DOWNLOAD', url: imageUrl(adapter.unitId, archNum, p), filename  }); } catch (e) { if (handleContextError(e)) throw e; }
     sendStatus(`Скачана стр. ${p}`);
   }
 
@@ -3877,6 +4111,7 @@ async function downloadCurrent() {
 // ── Обработчик сообщений от popup / background ────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!isExtensionContextValid()) { console.warn('[RAD] onMessage ignored: context invalidated'); return; }
   if (!msg?.type) return;
 
   switch (msg.type) {
@@ -3961,14 +4196,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         if (!previewUrl && offs.length > 0) previewUrl = vrrThumbUrl(unit, offs[0]);
       } else if (adapter?.type === 'arsvo') {
-        if (adapter.guid) previewUrl = arsvoImageUrl(adapter.guid, curPage - 1);
+        if (adapter.guid) {
+          previewUrl = isElarSingleTileMode()
+            ? elarSingleTileUrl(adapter.guid, curPage - 1)
+            : arsvoImageUrl(adapter.guid, curPage - 1);
+        }
       } else if (adapter?.type === 'yar' && cachedArchNum) {
         previewUrl = imageUrl(unit, cachedArchNum, curPage);
       } else if (adapter?.type === 'cgamos-spa') {
         const dataUrl = extractCgamosRenderedImage();
         if (dataUrl && dataUrl.length > 5000) previewUrl = dataUrl;
       } else if (adapter?.type === 'cgamos-arsvo' && adapter.guid) {
-        previewUrl = arsvoImageUrl(adapter.guid, curPage - 1);
+        previewUrl = isElarSingleTileMode()
+          ? elarSingleTileUrl(adapter.guid, curPage - 1)
+          : arsvoImageUrl(adapter.guid, curPage - 1);
       } else if (adapter?.type === 'kaisa') {
         const imgs = getKaisaImageUrls();
         const raw  = imgs[getKaisaCurrentPage() - 1] || imgs[0];
@@ -4008,7 +4249,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // ── Инициализация ─────────────────────────────────────────────────────────────
 
 ensureSettings().then(async () => {
-  sweepOldResumeStates().catch(() => {});
+  try { await sweepOldResumeStates(); } catch {}
 
   try {
     const adapter = getAdapterInfo();
@@ -4026,8 +4267,9 @@ ensureSettings().then(async () => {
       setIcon('inactive');
     }
   } catch (e) {
-    log('init error:', e); setIcon('inactive');
+    if (!handleContextError(e)) log('init error:', e);
+    try { setIcon('inactive'); } catch {}
   }
-});
+}).catch(e => { if (!handleContextError(e)) console.warn('[RAD] ensureSettings init:', e); });
 
 log('content-script loaded — Regional Archive Downloader v3.0.1');
