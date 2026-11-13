@@ -72,10 +72,33 @@ function _clearPDFCache() {
 let cachedArchNum = null;
 let _archiveImageSuffix = null;
 
+// Суффикс пути к сканам: /archive27/image/937?n=1, /archive27/image-inv/937?n=1
+// (описи) либо /archive27/inage/937?n=1 — так Ярославский архив отдаёт листы дела
+// (опечатка в его собственном viewer.min.js: pathname.replace("/unit", "/inage")).
+function detectArchiveImageSuffix() {
+  const RE = /\/archive\d+\/(image-inv|inage-inv|inage|image)\//;
+
+  // Приоритет — картинке из самого просмотрщика: её URL гарантированно рабочий.
+  const viewerImg = document.querySelector('#viewer img[src*="/archive"]');
+  const viewerMatch = (viewerImg?.getAttribute('src') || '').match(RE);
+  if (viewerMatch) return viewerMatch[1];
+
+  let first = null;
+  for (const img of document.querySelectorAll('img')) {
+    const m = (img.getAttribute('src') || img.src || '').match(RE);
+    if (!m) continue;
+    if (m[1] === 'image-inv') return 'image-inv'; // прежняя семантика для описей
+    if (!first) first = m[1];
+  }
+  return first;
+}
+
 function getArchiveImageSuffix() {
   if (_archiveImageSuffix !== null) return _archiveImageSuffix;
-  const invImg = document.querySelector('img[src*="/image-inv/"]');
-  _archiveImageSuffix = invImg ? 'image-inv' : 'image';
+  const detected = detectArchiveImageSuffix();
+  // Кэшируем только положительный результат: разметка может быть ещё не готова.
+  if (!detected) return 'image';
+  _archiveImageSuffix = detected;
   log('archive image suffix detected:', _archiveImageSuffix);
   return _archiveImageSuffix;
 }
@@ -365,10 +388,14 @@ function getUnitId() {
   // Стандартный путь: /unit/12345
   const m = location.pathname.match(/\/unit\/(\d+)/);
   if (m) return m[1];
-  const archViewerImg = document.querySelector('img[src*="/archive"][src*="/image"]');
+  // Запасной путь: id дела в адресе картинки просмотрщика
+  // (/archive27/image/937, /archive27/inage/937 — как на af.yar-archives.ru)
+  const archViewerImg = document.querySelector('#viewer img[src*="/archive"]') ||
+                        document.querySelector('img[src*="/archive"][src*="/image"]') ||
+                        document.querySelector('img[src*="/archive"][src*="/inage"]');
   if (archViewerImg) {
     const sm = (archViewerImg.getAttribute('src') || '')
-      .match(/\/archive\d+\/image(?:-inv)?\/(\d+)/);
+      .match(/\/archive\d+\/(?:image(?:-inv)?|inage(?:-inv)?)\/(\d+)/);
     if (sm) return sm[1];
   }
 
@@ -511,6 +538,61 @@ function imageUrl(unit, archNum, page) {
 }
 
 function pad(num, w) { return String(num).padStart(w, '0'); }
+
+// Текущая страница в просмотрщике Ярославского архива (Yii + jquery.iviewer).
+// Номер страницы НЕ хранится в разметке: viewer.min.js держит его в location.hash
+// (#2) и дублирует в поле #page-to как «2 из 5», а картинку грузит по адресу
+// /archive<NN>/inage/<unit>?n=2 (обратите внимание: «inage», а не «image»).
+// Возвращает null, если страница не похожа на такой просмотрщик.
+function detectYarViewerPage() {
+  const pageInput = document.getElementById('page-to');
+  const inageImg  = document.querySelector('img[src*="/inage/"], img[src*="/inage-inv/"]');
+  // Признаки именно этого просмотрщика: поле «N из M» и/или отдача листов по /inage/.
+  // Одного #viewer мало — такой id встречается и в других архивных просмотрщиках.
+  if (!pageInput && !inageImg) return null;
+
+  const viewerImg = document.querySelector('#viewer img') || inageImg;
+
+  // Просмотрщик не даёт уйти за последнюю страницу, но хеш при этом остаётся
+  // прежним (#99), поэтому номер страницы ограничиваем известным числом листов.
+  const hint = getViewerTotalPagesHint();
+  const clamp = n => (hint && n > hint ? hint : n);
+
+  // 1. Хеш — самый надёжный источник: по нему просмотрщик и выбирает страницу.
+  const hashPage = parseInt((location.hash || '').replace(/^#/, ''), 10);
+  if (Number.isFinite(hashPage) && hashPage >= 1) return clamp(hashPage);
+
+  // 2. Поле «2 из 5» (при фокусе показывает просто «2»).
+  if (pageInput) {
+    const m = (pageInput.value || '').match(/^\s*(\d+)/);
+    if (m) {
+      const n = Number(m[1]);
+      if (n >= 1) return clamp(n);
+    }
+  }
+
+  // 3. URL уже загруженной картинки: .../inage/937?n=2
+  if (viewerImg) {
+    const m = (viewerImg.getAttribute('src') || viewerImg.src || '').match(/[?&]n=(\d+)/);
+    if (m) {
+      const n = Number(m[1]);
+      if (n >= 1) return clamp(n);
+    }
+  }
+
+  return null;
+}
+
+// Общее число листов, если просмотрщик его показывает («2 из 5» в #page-to).
+function getViewerTotalPagesHint() {
+  const pageInput = document.getElementById('page-to');
+  if (!pageInput) return null;
+  const m = (pageInput.value || '').match(/из\s+(\d+)/);
+  if (!m) return null;
+  const total = Number(m[1]);
+  return Number.isFinite(total) && total >= 1 ? total : null;
+}
+
 function detectCurrentPage() {
   if (isArsvoPage()) {
     const el = document.getElementById(
@@ -523,18 +605,22 @@ function detectCurrentPage() {
     return getArsvoCurrentPage();
   }
 
+  // Просмотрщик с номером страницы в хеше / поле «N из M».
+  const viewerPage = detectYarViewerPage();
+  if (viewerPage !== null) return viewerPage;
+
   let maxPage = 1;
   let found   = false;
   for (const img of document.querySelectorAll('img')) {
     try {
       const src = img.getAttribute('src') || img.src || '';
-      if (src.includes('/image/') || src.includes('/image-inv/')) {
-        const m = src.match(/[?&]n=(\d+)/);
-        if (m) {
-          const n = Number(m[1]);
-          if (n > maxPage) maxPage = n;
-          found = true;
-        }
+      // /image/, /image-inv/, /inage/, /inage-inv/
+      if (!/\/(?:image(?:-inv)?|inage(?:-inv)?)\//.test(src)) continue;
+      const m = src.match(/[?&]n=(\d+)/);
+      if (m) {
+        const n = Number(m[1]);
+        if (n > maxPage) maxPage = n;
+        found = true;
       }
     } catch { /* ignore */ }
   }
@@ -1899,6 +1985,15 @@ async function findTotalPages(unit, archNum, start, maxPages, progressCb) {
   progressCb?.(`Проверка страницы ${start}…`);
   if (!await testImageWithRetry(imageUrl(unit, archNum, start))) return 0;
 
+  // Просмотрщик может сам сообщать общее число листов («1 из 2» в поле #page-to).
+  // Если страница с этим номером реально отдаётся — доверяем ей и не гадаем
+  // по границам: так поиск корректен даже когда сервер отдаёт что-то на n > конца.
+  const hint = getViewerTotalPagesHint();
+  if (hint && hint >= start && hint <= maxPages) {
+    progressCb?.(`Проверка последней страницы ${hint}…`);
+    if (await testImageWithRetry(imageUrl(unit, archNum, hint))) return hint;
+  }
+
   const checkpoints = [start];
   let p = start;
   while (p < maxPages) {
@@ -2260,6 +2355,9 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
       ? overrideFrom
       : (cfg.startFromCurrent ? detectCurrentPage() : 1);
 
+    // «start» — только начало ПОИСКА последней страницы (настройка
+    // «Начинать поиск с текущей открытой страницы»), как в downloadAll.
+    // Сам PDF собирается с первой страницы (или с явно заданной в диапазоне).
     sendStatus(`PDF: поиск страниц начиная с ${start}…`);
     const discovered = await findTotalPages(
       unit, archNum, start, cfg.maxPages, t => sendStatus(`PDF: ${t}`)
@@ -2267,8 +2365,14 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
 
     if (!discovered) { sendDone('PDF: страницы не найдены'); return; }
 
+    const first = overrideFrom != null ? overrideFrom : 1;
     const last  = overrideTo != null ? Math.min(overrideTo, discovered) : discovered;
-    const total = last - start + 1;
+    const total = last - first + 1;
+
+    if (total < 1) {
+      sendDone(`PDF: в заданном диапазоне нет страниц (в деле ${discovered})`);
+      return;
+    }
 
     if (total > PDF_PAGE_HARD_LIMIT) {
       sendDone(
@@ -2280,9 +2384,9 @@ async function generatePDF(overrideFrom = null, overrideTo = null) {
 
     const failedNums = new Set();
 
-    for (let p = start; p <= last; p++) {
+    for (let p = first; p <= last; p++) {
       await waitIfPaused();
-      sendProgress(p - start + 1, total);
+      sendProgress(p - first + 1, total);
       sendStatus(`PDF: страница ${p} / ${last}` +
         (cfg.adaptiveSpeed ? ` (задержка ${throttle.delay} мс)` : ''));
 
@@ -3926,4 +4030,4 @@ ensureSettings().then(async () => {
   }
 });
 
-log('content-script loaded — Regional Archive Downloader v3.0.0');
+log('content-script loaded — Regional Archive Downloader v3.0.1');
